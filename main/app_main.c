@@ -15,6 +15,7 @@
 #include "esp_timer.h"
 #include "esp_task_wdt.h"
 #include "esp_idf_version.h"
+#include "esp_psram.h"
 #include "lvgl.h"
 
 #include "board_waveshare_7b.h"
@@ -27,6 +28,20 @@ static esp_lcd_panel_handle_t s_panel_handle;
 static esp_timer_handle_t s_lvgl_tick_timer;
 static gt911_handle_t s_touch_handle;
 static bool s_lvgl_task_wdt_registered;
+static bool s_psram_available;
+
+static bool query_psram_once(void)
+{
+    static bool s_checked;
+    if (!s_checked) {
+        s_psram_available = esp_psram_is_initialized();
+        if (!s_psram_available) {
+            ESP_LOGW(TAG, "PSRAM not detected, using internal SRAM buffers");
+        }
+        s_checked = true;
+    }
+    return s_psram_available;
+}
 
 typedef struct {
     lv_obj_t *length_cm;
@@ -201,7 +216,8 @@ static void init_display(void)
     panel_config.timings.flags.hsync_idle_low = true;
     panel_config.timings.flags.vsync_idle_low = true;
     panel_config.timings.flags.de_idle_high = false;
-    panel_config.flags.fb_in_psram = true;
+    bool has_psram = query_psram_once();
+    panel_config.flags.fb_in_psram = has_psram;
 
     ESP_ERROR_CHECK(esp_lcd_new_rgb_panel(&panel_config, &s_panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_reset(s_panel_handle));
@@ -217,8 +233,34 @@ static void init_lvgl(void)
     size_t buffer_pixels = (BOARD_LCD_H_RES * BOARD_LCD_V_RES) / 10;
     size_t buffer_bytes = buffer_pixels * sizeof(lv_color_t);
 
-    lv_color_t *buf1 = heap_caps_malloc(buffer_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    lv_color_t *buf2 = heap_caps_malloc(buffer_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    uint32_t preferred_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+    uint32_t fallback_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+
+    lv_color_t *buf1 = NULL;
+    lv_color_t *buf2 = NULL;
+
+    if (query_psram_once()) {
+        buf1 = heap_caps_malloc(buffer_bytes, preferred_caps);
+        buf2 = heap_caps_malloc(buffer_bytes, preferred_caps);
+        if (!buf1 || !buf2) {
+            ESP_LOGW(TAG, "Insufficient PSRAM, falling back to internal SRAM buffers");
+            if (buf1) {
+                heap_caps_free(buf1);
+                buf1 = NULL;
+            }
+            if (buf2) {
+                heap_caps_free(buf2);
+                buf2 = NULL;
+            }
+        }
+    }
+
+    if (!buf1) {
+        buf1 = heap_caps_malloc(buffer_bytes, fallback_caps);
+    }
+    if (!buf2) {
+        buf2 = heap_caps_malloc(buffer_bytes, fallback_caps);
+    }
     ESP_ERROR_CHECK(buf1 ? ESP_OK : ESP_ERR_NO_MEM);
     ESP_ERROR_CHECK(buf2 ? ESP_OK : ESP_ERR_NO_MEM);
 
