@@ -10,6 +10,7 @@
 #include "esp_err.h"
 #include "esp_heap_caps.h"
 #include "esp_lcd_panel_rgb.h"
+#include "esp_lcd_panel_ops.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "lvgl.h"
