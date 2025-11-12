@@ -15,7 +15,10 @@
 #include "esp_timer.h"
 #include "esp_task_wdt.h"
 #include "esp_idf_version.h"
+#include "soc/soc_caps.h"
+#if SOC_PSRAM_SUPPORTED
 #include "esp_psram.h"
+#endif
 #include "lvgl.h"
 
 #include "board_waveshare_7b.h"
@@ -28,6 +31,7 @@ static esp_lcd_panel_handle_t s_panel_handle;
 static esp_timer_handle_t s_lvgl_tick_timer;
 static gt911_handle_t s_touch_handle;
 static bool s_lvgl_task_wdt_registered;
+#if SOC_PSRAM_SUPPORTED
 static bool s_psram_available;
 
 static bool query_psram_once(void)
@@ -42,6 +46,12 @@ static bool query_psram_once(void)
     }
     return s_psram_available;
 }
+#else
+static bool query_psram_once(void)
+{
+    return false;
+}
+#endif
 
 typedef struct {
     lv_obj_t *length_cm;
