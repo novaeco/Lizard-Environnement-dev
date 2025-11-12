@@ -229,6 +229,14 @@ static void init_display(void)
     bool has_psram = query_psram_once();
     panel_config.flags.fb_in_psram = has_psram;
 
+    if (!has_psram) {
+        ESP_LOGE(TAG,
+                 "PSRAM requis : activez CONFIG_SPIRAM pour allouer le framebuffer %ux%u RGB16",
+                 BOARD_LCD_H_RES,
+                 BOARD_LCD_V_RES);
+        ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
+    }
+
     ESP_ERROR_CHECK(esp_lcd_new_rgb_panel(&panel_config, &s_panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_reset(s_panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_init(s_panel_handle));
