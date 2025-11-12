@@ -35,14 +35,22 @@ static float round_up_catalog_power(float value)
         5.0f, 7.5f, 10.0f, 12.5f, 15.0f, 20.0f, 25.0f, 30.0f, 35.0f,
         40.0f, 50.0f, 60.0f, 78.0f, 100.0f
     };
-    size_t count = sizeof(catalog) / sizeof(catalog[0]);
+    const size_t count = sizeof(catalog) / sizeof(catalog[0]);
 
     for (size_t i = 0; i < count; ++i) {
         if (value <= catalog[i]) {
             return catalog[i];
         }
     }
-    return catalog[count - 1];
+
+    /*
+     * When the requested power exceeds the predefined catalog, fall back to a
+     * conservative rounding strategy that increases in 25 W steps. This avoids
+     * returning the maximum catalog entry (100 W) for higher requirements and
+     * prevents undersizing large terrariums.
+     */
+    const float step = 25.0f;
+    return ceilf(value / step) * step;
 }
 
 static uint32_t ceil_positive(float value)
@@ -50,7 +58,11 @@ static uint32_t ceil_positive(float value)
     if (value <= 0.0f) {
         return 0U;
     }
-    return (uint32_t)ceilf(value - 1e-6f);
+    float rounded = ceilf(value - 1e-6f);
+    if (rounded < 1.0f) {
+        rounded = 1.0f;
+    }
+    return (uint32_t)rounded;
 }
 
 bool terrarium_calc_compute(const terrarium_calc_input_t *input, terrarium_calc_result_t *result)
