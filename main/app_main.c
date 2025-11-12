@@ -13,6 +13,8 @@
 #include "esp_lcd_panel_ops.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_task_wdt.h"
+#include "esp_idf_version.h"
 #include "lvgl.h"
 
 #include "board_waveshare_7b.h"
@@ -24,6 +26,7 @@ static const char *TAG = "app";
 static esp_lcd_panel_handle_t s_panel_handle;
 static esp_timer_handle_t s_lvgl_tick_timer;
 static gt911_handle_t s_touch_handle;
+static bool s_lvgl_task_wdt_registered;
 
 typedef struct {
     lv_obj_t *length_cm;
@@ -45,6 +48,17 @@ typedef struct {
     lv_obj_t *misting_label;
 } terrarium_ui_ctx_t;
 
+static bool rgb_panel_color_trans_cb(esp_lcd_panel_handle_t panel, const esp_lcd_rgb_panel_event_data_t *edata, void *user_data)
+{
+    (void)panel;
+    (void)edata;
+    lv_display_t *disp = (lv_display_t *)user_data;
+    if (disp != NULL) {
+        lv_display_flush_ready(disp);
+    }
+    return false;
+}
+
 static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
     const int32_t x1 = area->x1;
@@ -52,14 +66,36 @@ static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px
     const int32_t x2 = area->x2;
     const int32_t y2 = area->y2;
 
-    ESP_ERROR_CHECK(esp_lcd_panel_draw_bitmap(s_panel_handle, x1, y1, x2 + 1, y2 + 1, px_map));
-    lv_display_flush_ready(disp);
+    esp_err_t err = esp_lcd_panel_draw_bitmap(s_panel_handle, x1, y1, x2 + 1, y2 + 1, px_map);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Panel draw bitmap failed: %s", esp_err_to_name(err));
+        lv_display_flush_ready(disp);
+    }
 }
 
 static void lvgl_tick_cb(void *arg)
 {
     (void)arg;
     lv_tick_inc(5);
+}
+
+static void configure_task_wdt(void)
+{
+#if CONFIG_ESP_TASK_WDT_INIT
+    const esp_task_wdt_config_t config = {
+        .timeout_ms = 12000,
+        .trigger_panic = true,
+        .idle_core_mask = (1 << portNUM_PROCESSORS) - 1,
+    };
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 1, 0)
+    esp_err_t err = esp_task_wdt_reconfigure(&config);
+#else
+    esp_err_t err = esp_task_wdt_init(config.timeout_ms / 1000, config.trigger_panic);
+#endif
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(TAG, "Task WDT reconfigure failed: %s", esp_err_to_name(err));
+    }
+#endif
 }
 
 static void lvgl_touch_read_cb(lv_indev_t *indev_drv, lv_indev_data_t *data)
@@ -80,8 +116,17 @@ static void lvgl_touch_read_cb(lv_indev_t *indev_drv, lv_indev_data_t *data)
 static void lvgl_task(void *arg)
 {
     (void)arg;
+    esp_err_t wdt_err = esp_task_wdt_add(NULL);
+    if (wdt_err == ESP_OK) {
+        s_lvgl_task_wdt_registered = true;
+    } else if (wdt_err != ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(TAG, "Failed to register LVGL task to WDT: %s", esp_err_to_name(wdt_err));
+    }
     while (true) {
         lv_timer_handler();
+        if (s_lvgl_task_wdt_registered) {
+            esp_task_wdt_reset();
+        }
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
@@ -161,6 +206,7 @@ static void init_display(void)
     ESP_ERROR_CHECK(esp_lcd_new_rgb_panel(&panel_config, &s_panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_reset(s_panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_init(s_panel_handle));
+    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(s_panel_handle, true));
     enable_backlight();
 }
 
@@ -179,6 +225,11 @@ static void init_lvgl(void)
     lv_display_t *display = lv_display_create(BOARD_LCD_H_RES, BOARD_LCD_V_RES);
     lv_display_set_flush_cb(display, lvgl_flush_cb);
     lv_display_set_buffers(display, buf1, buf2, buffer_pixels, LV_DISPLAY_RENDER_MODE_PARTIAL);
+
+    const esp_lcd_rgb_panel_event_callbacks_t callbacks = {
+        .on_color_trans_done = rgb_panel_color_trans_cb,
+    };
+    ESP_ERROR_CHECK(esp_lcd_rgb_panel_register_event_callbacks(s_panel_handle, &callbacks, display));
 
     esp_timer_create_args_t timer_args = {
         .callback = &lvgl_tick_cb,
@@ -462,6 +513,7 @@ static void build_ui(terrarium_ui_ctx_t *ctx)
 
 void app_main(void)
 {
+    configure_task_wdt();
     init_display();
     init_lvgl();
     init_touch();
