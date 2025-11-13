@@ -1,12 +1,12 @@
 # TerrariumCalc-ESP32S3
 
-Projet ESP-IDF v6.1 ciblant l'ESP32-S3 et la dalle Waveshare Touch LCD 7B (1024×600, contrôleur ST7262 + tactile GT911). L'application LVGL v9 fournit un calculateur complet des besoins matériels (tapis chauffant, éclairage LED, UV, substrat, brumisation) pour un terrarium, à partir des dimensions et paramètres saisis par l'utilisateur.
+Projet ESP-IDF v6.1 ciblant l'ESP32-S3 et la dalle Waveshare Touch LCD 7B (1024×600, contrôleur ST7262 + tactile GT911). L'application LVGL v9.4 fournit un calculateur complet des besoins matériels (tapis chauffant, éclairage LED, UV, substrat, brumisation) pour un terrarium, à partir des dimensions et paramètres saisis par l'utilisateur.
 
 ## Caractéristiques principales
 
 - **Affichage RGB 16 bpp** via `esp_lcd_rgb_panel`, double tampon LVGL (1/10ᵉ d'écran en PSRAM).
 - **Interface tactile GT911** sur I²C0 (SDA = GPIO8, SCL = GPIO9, IRQ = GPIO4).
-- **Interface utilisateur LVGL v9** : champs de saisie validés, liste déroulante pour le matériau du plancher, bouton « Calculer » et affichage structuré des résultats.
+- **Interface utilisateur LVGL v9.4** : champs de saisie validés, liste déroulante pour le matériau du plancher, bouton « Calculer » et affichage structuré des résultats.
 - **Module de calcul dédié** (`components/calc`) encapsulant toutes les formules métier (tapis chauffant, éclairage, UV, substrat, brumisation).
 - **Pilote GT911 minimal** (`components/gt911`) initialisant l’I²C maître, lisant les coordonnées et dégageant le statut tactile.
 - **Architecture prête pour l’industrialisation** : configuration LVGL dédiée (`main/lv_conf.h`), code modulable, commentaires pour activer l’expandeur CH422G si nécessaire.
@@ -19,10 +19,11 @@ Projet ESP-IDF v6.1 ciblant l'ESP32-S3 et la dalle Waveshare Touch LCD 7B (1024�
 
 ### Versions logicielles embarquées
 
-- **LVGL** : 9.0.x (configuration personnalisée dans `main/lv_conf.h`, build en mode FreeRTOS).
+- **LVGL** : 9.4.x (configuration personnalisée dans `main/lv_conf.h`, build en mode FreeRTOS).
 - **Pilotes ESP-IDF** : `esp_lcd_rgb_panel`, `esp_timer`, `esp_system` (API `esp_task_wdt`), `esp_driver_gpio`, `esp_driver_i2c`.
 - **Module tactile** : pilote GT911 interne (`components/gt911`).
 - **Module de calcul** : bibliothèque métier interne (`components/calc`) couverte par des tests Unity.
+- **Gestion des dépendances** : `idf_component.yml` fige `lvgl/lvgl` sur la branche 9.4.x pour garantir la compatibilité API.
 
 > Mettez à jour ces versions si vous migrez l'application afin de conserver une traçabilité logicielle complète.
 
@@ -33,6 +34,8 @@ idf.py set-target esp32s3
 idf.py fullclean
 idf.py build
 ```
+
+Lors du premier `idf.py build`, le gestionnaire de composants téléchargera automatiquement `lvgl/lvgl` en version 9.4.x telle que définie dans `idf_component.yml`.
 
 Pour flasher et lancer la console série :
 
