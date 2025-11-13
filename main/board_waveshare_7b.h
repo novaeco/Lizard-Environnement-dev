@@ -3,9 +3,14 @@
 #include "driver/gpio.h"
 #include "esp_lcd_types.h"
 
+/**
+ * Résolution native ST7262 telle que fournie par Waveshare (datasheet Rev.1.1)
+ * et fréquence PCLK recommandée. 16 MHz fonctionne mais peut induire du
+ * tearing ; augmenter à 18-20 MHz si l'alimentation le permet.
+ */
 #define BOARD_LCD_H_RES             1024
 #define BOARD_LCD_V_RES             600
-#define BOARD_LCD_PIXEL_CLOCK_HZ    (16 * 1000 * 1000)
+#define BOARD_LCD_PIXEL_CLOCK_HZ    (18 * 1000 * 1000)
 
 #define BOARD_LCD_BK_LIGHT_ON_LEVEL 1
 #define BOARD_LCD_BK_LIGHT_OFF_LEVEL !BOARD_LCD_BK_LIGHT_ON_LEVEL
@@ -36,6 +41,11 @@
 
 #define BOARD_LCD_DATA_WIDTH        16
 
+/*
+ * Timings issus de la note d'application Waveshare (HSYNC 20/140/160,
+ * VSYNC 3/20/12). Ajustez ces constantes si votre dalle nécessite un
+ * blanking différent.
+ */
 #define BOARD_LCD_TIMING_PCLK_ACTIVE_NEG   true
 #define BOARD_LCD_TIMING_HPW               20
 #define BOARD_LCD_TIMING_HBP               140
@@ -51,10 +61,10 @@
 #define BOARD_GT911_I2C_PORT       I2C_NUM_0
 #define BOARD_GT911_I2C_FREQ_HZ    400000
 
-/*
- * Optional: enable power rails through the CH422G expander if present.
- * Uncomment and implement board_ch422g_enable() to drive EXIO6 (LCD_VDD_EN)
- * and EXIO2 (backlight).
+/**
+ * Active l'alimentation LCD via l'expandeur CH422G (EXIO6) et le
+ * rétroéclairage (EXIO2) si votre design le nécessite. Une implémentation
+ * faible est fournie dans `app_main.c` et peut être surchargée.
  */
-// void board_ch422g_enable(void);
+void board_ch422g_enable(void);
 
