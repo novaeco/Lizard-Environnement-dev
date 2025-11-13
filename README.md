@@ -15,7 +15,7 @@ Projet ESP-IDF v5.5 ciblant l'ESP32-S3 et la dalle Waveshare Touch LCD 7B (1024�
 
 - ESP-IDF v5.5.x (`export.sh`/`export.ps1` chargé).
 - Outilchain GCC 14 fournie par l’IDF.
-- Carte ESP32-S3 disposant de PSRAM et connectée au module Waveshare Touch LCD 7B selon les broches définies dans `main/board_waveshare_7b.h`.
+- Carte ESP32-S3 disposant de PSRAM et connectée au module Waveshare Touch LCD 7B selon les broches définies dans `main/board_waveshare_7b.h`. Activez impérativement la PSRAM Octal 80 MHz dans la configuration (voir `sdkconfig.defaults`) pour éviter l'échec d'initialisation `quad_psram: PSRAM ID read error` constaté lorsque le mode Quad par défaut est appliqué.
 
 ## Configuration & compilation
 
@@ -32,6 +32,12 @@ idf.py -p /dev/ttyUSB0 flash monitor
 ```
 
 Remplacez `/dev/ttyUSB0` par le port série de votre cible. La configuration par défaut active la PSRAM, LVGL 16 bpp et les logs LVGL niveau INFO.
+
+### Points de configuration critiques
+
+- `CONFIG_SPIRAM_TYPE_AUTO=y` et `CONFIG_SPIRAM_MODE_OCT=y` forcent l'initialisation en mode Octal 80 MHz, requis par le module Waveshare (ESP32-S3 + PSRAM 8 lignes). Laisser le mode Quad (`CONFIG_SPIRAM_MODE_SPI`) provoque l'erreur de boot observée (`PSRAM chip not found or not supported`).
+- `CONFIG_SPIRAM_SPEED_80M=y` garantit une bande passante suffisante pour le framebuffer RGB 1024×600.
+- Les autres options `CONFIG_SPIRAM_*` conservent l'allocation LVGL en PSRAM tout en autorisant des tampons de secours en SRAM interne si besoin.
 
 ## Interface & usage
 
