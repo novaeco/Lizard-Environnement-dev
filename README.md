@@ -20,7 +20,7 @@ Projet ESP-IDF v6.1 ciblant l'ESP32-S3 et la dalle Waveshare Touch LCD 7B (1024�
 ### Versions logicielles embarquées
 
 - **LVGL** : 9.0.x (configuration personnalisée dans `main/lv_conf.h`, build en mode FreeRTOS).
-- **Pilotes ESP-IDF** : `esp_lcd_rgb_panel`, `esp_timer`, `esp_task_wdt`, `esp_driver_gpio`, `esp_driver_i2c`.
+- **Pilotes ESP-IDF** : `esp_lcd_rgb_panel`, `esp_timer`, `esp_system` (API `esp_task_wdt`), `esp_driver_gpio`, `esp_driver_i2c`.
 - **Module tactile** : pilote GT911 interne (`components/gt911`).
 - **Module de calcul** : bibliothèque métier interne (`components/calc`) couverte par des tests Unity.
 
