@@ -14,7 +14,6 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_task_wdt.h"
-#include "esp_idf_version.h"
 #include "soc/soc_caps.h"
 #if SOC_PSRAM_SUPPORTED
 #include "esp_psram.h"
@@ -140,11 +139,7 @@ static void configure_task_wdt(void)
         .trigger_panic = true,
         .idle_core_mask = (1 << portNUM_PROCESSORS) - 1,
     };
-#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 1, 0)
     esp_err_t err = esp_task_wdt_reconfigure(&config);
-#else
-    esp_err_t err = esp_task_wdt_init(config.timeout_ms / 1000, config.trigger_panic);
-#endif
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGW(TAG, "Task WDT reconfigure failed: %s", esp_err_to_name(err));
     }

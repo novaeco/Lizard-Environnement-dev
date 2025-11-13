@@ -1,6 +1,6 @@
 # TerrariumCalc-ESP32S3
 
-Projet ESP-IDF v5.5 ciblant l'ESP32-S3 et la dalle Waveshare Touch LCD 7B (1024×600, contrôleur ST7262 + tactile GT911). L'application LVGL v9 fournit un calculateur complet des besoins matériels (tapis chauffant, éclairage LED, UV, substrat, brumisation) pour un terrarium, à partir des dimensions et paramètres saisis par l'utilisateur.
+Projet ESP-IDF v6.1 ciblant l'ESP32-S3 et la dalle Waveshare Touch LCD 7B (1024×600, contrôleur ST7262 + tactile GT911). L'application LVGL v9 fournit un calculateur complet des besoins matériels (tapis chauffant, éclairage LED, UV, substrat, brumisation) pour un terrarium, à partir des dimensions et paramètres saisis par l'utilisateur.
 
 ## Caractéristiques principales
 
@@ -13,11 +13,11 @@ Projet ESP-IDF v5.5 ciblant l'ESP32-S3 et la dalle Waveshare Touch LCD 7B (1024�
 
 ## Pré-requis
 
-- ESP-IDF v5.5.x (`export.sh`/`export.ps1` chargé).
-- Outilchain GCC 14 fournie par l’IDF.
+- ESP-IDF v6.1.x (`install.sh` puis `export.sh` / `export.ps1` depuis l'IDF 6.1).
+- Toolchain GCC 14 / LLVM fournie avec ESP-IDF 6.1 (support C gnu23 et C++ gnu++26).
 - Carte ESP32-S3 disposant de PSRAM et connectée au module Waveshare Touch LCD 7B selon les broches définies dans `main/board_waveshare_7b.h`. Activez impérativement la PSRAM Octal 80 MHz dans la configuration (voir `sdkconfig.defaults`) pour éviter l'échec d'initialisation `quad_psram: PSRAM ID read error` constaté lorsque le mode Quad par défaut est appliqué.
 
-## Configuration & compilation
+## Configuration & compilation (ESP-IDF 6.1)
 
 ```bash
 idf.py set-target esp32s3
@@ -35,9 +35,10 @@ Remplacez `/dev/ttyUSB0` par le port série de votre cible. La configuration par
 
 ### Points de configuration critiques
 
-- `CONFIG_SPIRAM_TYPE_AUTO=y` et `CONFIG_SPIRAM_MODE_OCT=y` forcent l'initialisation en mode Octal 80 MHz, requis par le module Waveshare (ESP32-S3 + PSRAM 8 lignes). Laisser le mode Quad (`CONFIG_SPIRAM_MODE_SPI`) provoque l'erreur de boot observée (`PSRAM chip not found or not supported`).
-- `CONFIG_SPIRAM_SPEED_80M=y` garantit une bande passante suffisante pour le framebuffer RGB 1024×600.
-- Les autres options `CONFIG_SPIRAM_*` conservent l'allocation LVGL en PSRAM tout en autorisant des tampons de secours en SRAM interne si besoin.
+- `CONFIG_SPIRAM_TYPE_AUTO=y`, `CONFIG_SPIRAM_MODE_OCT=y` et `CONFIG_SPIRAM_SPEED_80M=y` forcent l'initialisation PSRAM Octal 80 MHz (indispensable sur ESP32-S3 + Waveshare 7B). Le mode Quad (`CONFIG_SPIRAM_MODE_SPI`) doit rester désactivé pour éviter l'erreur `PSRAM chip not found or not supported`.
+- `CONFIG_SPIRAM_USE_MALLOC=y`, `CONFIG_SPIRAM_USE_CAPS_ALLOC=y` et `CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y` permettent à LVGL d'allouer ses buffers en PSRAM tout en conservant des tampons de secours en SRAM interne.
+- `CONFIG_LV_COLOR_DEPTH_16=y` doit être activé pour conserver l'interface en RGB565. Vérifiez aussi `CONFIG_LV_USE_LOG=y` et `CONFIG_LV_LOG_LEVEL_INFO=y` pour conserver un suivi runtime cohérent.
+- `CONFIG_ESP_TASK_WDT_INIT=y` et `CONFIG_ESP_TASK_WDT_TIMEOUT_S=12` garantissent la compatibilité avec la reconfiguration du watchdog via `esp_task_wdt_reconfigure()` introduite dans l'IDF 6.x.
 
 ## Interface & usage
 
@@ -86,7 +87,7 @@ TerrariumCalc-ESP32S3/
 
 ## Validation attendue
 
-- Compilation sans avertissements bloquants (`idf.py build`).
+- Compilation sans avertissements bloquants (`idf.py build`) sous ESP-IDF 6.1 (warnings traités en erreurs par défaut).
 - Affichage de l’UI et interaction tactile fluide (lecture GT911).
 - Calculs conformes aux formules spécifiées : densité 0,040 W/cm², coefficients matériaux, arrondi catalogue, conversions m² / litres, arrondis supérieurs pour LED, UV et buses.
 
