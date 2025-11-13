@@ -93,7 +93,7 @@ TerrariumCalc-ESP32S3/
 - Ajustez `board_waveshare_7b.h` si votre routage diffère (PCLK, HSYNC, DE, lignes RGB, GPIO rétroéclairage, etc.).
 - La fonction `board_ch422g_enable()` peut être implémentée pour piloter un expandeur CH422G (EXIO6 pour LCD_VDD_EN, EXIO2 pour le backlight) si votre design le requiert.
 - Les buffers LVGL (2 × 1/10ᵉ de l’écran) sont alloués en PSRAM ; assurez-vous que la PSRAM est opérationnelle (`CONFIG_SPIRAM=y`).
-- Le pilote GT911 considère l’adresse I²C 0x14 (7 bits). Modifiez `gt911_config_t.i2c_address` si votre module utilise 0x5D.
+- L’adresse I²C du tactile GT911 est maintenant définie dans `BOARD_GT911_I2C_ADDR` (par défaut 0x14). Adaptez cette constante si votre dalle est câblée sur 0x5D sans modifier le code applicatif.
 
 ### Calibration tactile & dépannage
 
@@ -124,6 +124,6 @@ Projet distribué sous licence **MIT**. Voir le fichier `LICENSE` pour le texte 
 
 ## Résolution des incidents connus
 
-- **PSRAM absente** : l'application reste fonctionnelle mais désactive LVGL (message « PSRAM requis »). Activez `CONFIG_SPIRAM` et vérifiez `esp_psram_get_size()` dans les logs.
+- **PSRAM absente** : l'application s'arrête après le log « PSRAM requis ». Activez `CONFIG_SPIRAM` et vérifiez `esp_psram_get_size()` dans les logs avant de relancer.
 - **Écran blanc ou tearing** : ajustez `BOARD_LCD_PIXEL_CLOCK_HZ` (>=18 MHz recommandé) et les timings HPW/HBP/HFP pour respecter la datasheet ST7262.
 - **Watchdog LVGL** : si l'UI se fige, contrôlez les logs `LVGL watchdog tripped` et inspectez les traitements lourds dans `lv_timer`.

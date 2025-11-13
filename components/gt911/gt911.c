@@ -9,6 +9,7 @@
 #define GT911_STATUS_REG 0x814E
 #define GT911_FIRST_POINT_REG 0x8150
 #define GT911_POINT_STRIDE 8
+#define GT911_MAX_POINTS   5
 
 static const char *TAG = "gt911";
 
@@ -110,6 +111,9 @@ esp_err_t gt911_init(const gt911_config_t *config, gt911_handle_t *handle)
 
     gt911_handle_t temp = {
         .i2c_port = config->i2c_port,
+        .sda_io = config->sda_io,
+        .scl_io = config->scl_io,
+        .rst_io = config->rst_io,
         .irq_io = config->irq_io,
         .i2c_address = config->i2c_address ? config->i2c_address : GT911_DEFAULT_ADDR,
         .logical_max_x = config->logical_max_x,
@@ -206,16 +210,27 @@ esp_err_t gt911_read_touch(gt911_handle_t *handle, uint16_t *x, uint16_t *y, boo
     }
 
     uint8_t points = status & 0x0FU;
+    if (points > GT911_MAX_POINTS) {
+        points = GT911_MAX_POINTS;
+    }
+
     if (points == 0U) {
         *touched = false;
     } else {
-        uint8_t buffer[GT911_POINT_STRIDE] = {0};
-        err = gt911_i2c_read(handle, GT911_FIRST_POINT_REG, buffer, sizeof(buffer));
+        uint8_t buffer[GT911_POINT_STRIDE * GT911_MAX_POINTS] = {0};
+        size_t to_read = (size_t)points * GT911_POINT_STRIDE;
+        err = gt911_i2c_read(handle, GT911_FIRST_POINT_REG, buffer, to_read);
         if (err != ESP_OK) {
             return err;
         }
-        uint16_t raw_x = (uint16_t)buffer[1] << 8 | buffer[0];
-        uint16_t raw_y = (uint16_t)buffer[3] << 8 | buffer[2];
+
+        /*
+         * The controller returns touches ordered by weight. We expose the
+         * primary point while still draining the full buffer to avoid
+         * blocking subsequent reports when multitouch is active.
+         */
+        uint16_t raw_x = ((uint16_t)buffer[1] << 8) | buffer[0];
+        uint16_t raw_y = ((uint16_t)buffer[3] << 8) | buffer[2];
 
         if (handle->swap_xy) {
             uint16_t tmp = raw_x;
@@ -239,9 +254,24 @@ esp_err_t gt911_read_touch(gt911_handle_t *handle, uint16_t *x, uint16_t *y, boo
     }
 
     uint8_t clear = 0;
-    esp_err_t clear_err = gt911_i2c_write(handle, GT911_STATUS_REG, &clear, 1);
+    esp_err_t clear_err = ESP_FAIL;
+    for (int attempt = 0; attempt < 3 && clear_err != ESP_OK; ++attempt) {
+        clear_err = gt911_i2c_write(handle, GT911_STATUS_REG, &clear, 1);
+        if (clear_err == ESP_OK) {
+            break;
+        }
+        ESP_LOGW(TAG, "GT911 status clear attempt %d failed: %s", attempt + 1, esp_err_to_name(clear_err));
+        if (attempt == 0 && handle->rst_io != GPIO_NUM_NC) {
+            gpio_set_level(handle->rst_io, 0);
+            vTaskDelay(pdMS_TO_TICKS(5));
+            gpio_set_level(handle->rst_io, 1);
+            vTaskDelay(pdMS_TO_TICKS(15));
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(2));
+        }
+    }
     if (clear_err != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to clear GT911 status: %s", esp_err_to_name(clear_err));
+        ESP_LOGE(TAG, "Failed to clear GT911 status after retries");
         return clear_err;
     }
     return ESP_OK;
