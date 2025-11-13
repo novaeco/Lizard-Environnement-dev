@@ -238,8 +238,7 @@ static esp_err_t init_display(void)
     esp_lcd_rgb_panel_config_t panel_config = {
         .clk_src = LCD_CLK_SRC_DEFAULT,
         .data_width = BOARD_LCD_DATA_WIDTH,
-        .psram_trans_align = 64,
-        .sram_trans_align = 4,
+        .dma_burst_size = 64,
         .hsync_gpio_num = BOARD_LCD_PIN_HSYNC,
         .vsync_gpio_num = BOARD_LCD_PIN_VSYNC,
         .de_gpio_num = BOARD_LCD_PIN_DE,
