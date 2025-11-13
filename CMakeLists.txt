@@ -1,7 +1,12 @@
 cmake_minimum_required(VERSION 3.24)
 
+set(IDF_VERSION_HINT "ESP-IDF" CACHE STRING "Version d'ESP-IDF attendue (indicative)")
+
 if(NOT DEFINED ENV{IDF_PATH})
-    message(FATAL_ERROR "IDF_PATH n'est pas défini : exécutez export.sh depuis l'ESP-IDF 6.1")
+    message(
+        FATAL_ERROR
+        "IDF_PATH n'est pas défini : exécutez export.sh depuis votre installation ${IDF_VERSION_HINT}"
+    )
 endif()
 
 set(EXTRA_COMPONENT_DIRS "components")

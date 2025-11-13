@@ -45,6 +45,10 @@ typedef struct {
 } lvgl_buffers_t;
 
 static lvgl_buffers_t s_lvgl_buffers;
+
+static esp_err_t init_touch(void);
+static void deinit_touch(void);
+static esp_err_t start_lvgl_task(void);
 #if SOC_PSRAM_SUPPORTED
 static bool query_psram_once(void)
 {
@@ -172,6 +176,10 @@ static void lvgl_touch_read_cb(lv_indev_t *indev_drv, lv_indev_data_t *data)
     uint16_t x = 0;
     uint16_t y = 0;
     bool pressed = false;
+    if (!s_touch_handle.initialized) {
+        data->state = LV_INDEV_STATE_RELEASED;
+        return;
+    }
     if (gt911_read_touch(&s_touch_handle, &x, &y, &pressed) == ESP_OK) {
         data->point.x = x;
         data->point.y = y;
@@ -382,9 +390,18 @@ static esp_err_t init_lvgl(void)
         return err;
     }
 
+    return ESP_OK;
+}
+
+static esp_err_t start_lvgl_task(void)
+{
+    if (s_lvgl_task_handle) {
+        return ESP_OK;
+    }
     BaseType_t created = xTaskCreatePinnedToCore(lvgl_task, "lvgl", 8192, NULL, 4, &s_lvgl_task_handle, 1);
     if (created != pdPASS) {
         ESP_LOGE(TAG, "Failed to create LVGL task");
+        s_lvgl_task_handle = NULL;
         return ESP_FAIL;
     }
     return ESP_OK;
@@ -425,7 +442,7 @@ static void deinit_lvgl(void)
     s_lvgl_task_handle = NULL;
 }
 
-static void init_touch(void)
+static esp_err_t init_touch(void)
 {
     gt911_config_t cfg = {
         .i2c_port = BOARD_GT911_I2C_PORT,
@@ -434,7 +451,7 @@ static void init_touch(void)
         .rst_io = BOARD_GT911_RST_IO,
         .irq_io = BOARD_GT911_IRQ_IO,
         .i2c_clock_hz = BOARD_GT911_I2C_FREQ_HZ,
-        .i2c_address = 0x14,
+        .i2c_address = BOARD_GT911_I2C_ADDR,
         .logical_max_x = BOARD_LCD_H_RES,
         .logical_max_y = BOARD_LCD_V_RES,
         .invert_x = false,
@@ -445,15 +462,22 @@ static void init_touch(void)
     esp_err_t err = gt911_init(&cfg, &s_touch_handle);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "GT911 init failed: %s", esp_err_to_name(err));
-        return;
+        return err;
     }
 
     s_touch_indev = lv_indev_create();
+    if (!s_touch_indev) {
+        gt911_deinit(&s_touch_handle);
+        s_touch_handle.initialized = false;
+        ESP_LOGE(TAG, "Failed to allocate LVGL input device");
+        return ESP_ERR_NO_MEM;
+    }
     lv_indev_set_type(s_touch_indev, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(s_touch_indev, lvgl_touch_read_cb);
     if (s_display) {
         lv_indev_set_display(s_touch_indev, s_display);
     }
+    return ESP_OK;
 }
 
 static void deinit_touch(void)
@@ -573,9 +597,11 @@ static void update_results(terrarium_ui_ctx_t *ctx, const terrarium_calc_result_
     }
 
     const bool clamped = (res->status_flags & TERRARIUM_CALC_STATUS_INPUT_CLAMPED) != 0;
+    const bool invalid = (res->status_flags & TERRARIUM_CALC_STATUS_INPUT_INVALID) != 0;
     lv_label_set_text_fmt(
         ctx->status_label,
-        "Calcul realise OK%s",
+        "Calcul realise %s%s",
+        invalid ? "avec avertissements" : "OK",
         clamped ? " (entrees normalisees)" : "");
 }
 
@@ -757,9 +783,19 @@ void app_main(void)
         return;
     }
 
-    init_touch();
-
     static terrarium_ui_ctx_t ui_ctx = {0};
     build_ui(&ui_ctx);
+
+    err = init_touch();
+    if (err != ESP_OK) {
+        lv_label_set_text(ui_ctx.status_label, "Tactile indisponible - consultez les logs GT911.");
+        ESP_LOGW(TAG, "Touch controller unavailable (%s)", esp_err_to_name(err));
+    }
+
+    err = start_lvgl_task();
+    if (err != ESP_OK) {
+        lv_label_set_text(ui_ctx.status_label, "Erreur critique LVGL (tache non demarree).");
+        ESP_LOGE(TAG, "Unable to start LVGL task (%s)", esp_err_to_name(err));
+    }
 }
 

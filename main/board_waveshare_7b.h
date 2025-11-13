@@ -60,6 +60,7 @@
 #define BOARD_GT911_IRQ_IO         GPIO_NUM_4
 #define BOARD_GT911_I2C_PORT       I2C_NUM_0
 #define BOARD_GT911_I2C_FREQ_HZ    400000
+#define BOARD_GT911_I2C_ADDR       0x14
 
 /**
  * Active l'alimentation LCD via l'expandeur CH422G (EXIO6) et le

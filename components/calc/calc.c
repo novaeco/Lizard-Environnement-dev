@@ -6,8 +6,12 @@
 #define TERRARIUM_DIMENSION_MIN_CM   10.0f
 #define TERRARIUM_DIMENSION_MAX_CM   400.0f
 #define TERRARIUM_SUBSTRATE_MAX_CM   40.0f
+#define TERRARIUM_TARGET_LUX_MIN     0.0f
+#define TERRARIUM_TARGET_LUX_MAX     200000.0f
 #define TERRARIUM_LED_EFFICIENCY_MAX 320.0f
 #define TERRARIUM_LED_POWER_MAX_W    80.0f
+#define TERRARIUM_UV_TARGET_MAX      1000.0f
+#define TERRARIUM_UV_MODULE_MAX      1000.0f
 #define TERRARIUM_MIST_DENSITY_MIN   0.01f
 #define TERRARIUM_MIST_DENSITY_MAX   1.0f
 
@@ -102,18 +106,19 @@ bool terrarium_calc_compute(const terrarium_calc_input_t *input, terrarium_calc_
     const float width_cm = clampf(input->width_cm, TERRARIUM_DIMENSION_MIN_CM, TERRARIUM_DIMENSION_MAX_CM);
     const float height_cm = clampf(input->height_cm, TERRARIUM_DIMENSION_MIN_CM, TERRARIUM_DIMENSION_MAX_CM);
     const float substrate_thickness_cm = clampf(input->substrate_thickness_cm, 0.0f, TERRARIUM_SUBSTRATE_MAX_CM);
+    const float target_lux = clampf(input->target_lux, TERRARIUM_TARGET_LUX_MIN, TERRARIUM_TARGET_LUX_MAX);
     const float led_eff = clampf(input->led_efficiency_lm_per_w, 0.0f, TERRARIUM_LED_EFFICIENCY_MAX);
     const float led_power_unit = clampf(input->led_power_per_unit_w, 0.0f, TERRARIUM_LED_POWER_MAX_W);
-    float mist_density = input->mist_density_m2_per_nozzle;
-    if (mist_density < 0.0f) {
-        mist_density = TERRARIUM_MIST_DENSITY_MIN;
-    } else if (mist_density > TERRARIUM_MIST_DENSITY_MAX) {
-        mist_density = TERRARIUM_MIST_DENSITY_MAX;
-    }
+    const float uv_target = clampf(input->uv_target_intensity, 0.0f, TERRARIUM_UV_TARGET_MAX);
+    const float uv_module = clampf(input->uv_module_intensity, 0.0f, TERRARIUM_UV_MODULE_MAX);
+    const float mist_density = clampf(input->mist_density_m2_per_nozzle, 0.0f, TERRARIUM_MIST_DENSITY_MAX);
 
     if (length_cm != input->length_cm || width_cm != input->width_cm || height_cm != input->height_cm ||
-        substrate_thickness_cm != input->substrate_thickness_cm || led_eff != input->led_efficiency_lm_per_w ||
-        led_power_unit != input->led_power_per_unit_w || mist_density != input->mist_density_m2_per_nozzle) {
+        substrate_thickness_cm != input->substrate_thickness_cm || target_lux != input->target_lux ||
+        led_eff != input->led_efficiency_lm_per_w || led_power_unit != input->led_power_per_unit_w ||
+        uv_target != input->uv_target_intensity || uv_module != input->uv_module_intensity ||
+        (mist_density != input->mist_density_m2_per_nozzle &&
+         !(input->mist_density_m2_per_nozzle == 0.0f && mist_density == 0.0f))) {
         clamped = true;
     }
 
@@ -147,8 +152,10 @@ bool terrarium_calc_compute(const terrarium_calc_input_t *input, terrarium_calc_
     temp.heating.heater_resistance_ohm = heater_resistance;
     temp.heating.enclosure_volume_l = enclosure_volume_l;
 
-    if (input->target_lux > 0.0f && led_eff > 0.0f && led_power_unit > 0.0f) {
-        const float luminous_flux = input->target_lux * floor_area_m2;
+    bool input_invalid = false;
+
+    if (target_lux > 0.0f && led_eff > 0.0f && led_power_unit > 0.0f) {
+        const float luminous_flux = target_lux * floor_area_m2;
         const float led_power = luminous_flux / led_eff;
         const float led_units = led_power / led_power_unit;
         const uint32_t led_count = ceil_positive(led_units);
@@ -164,25 +171,29 @@ bool terrarium_calc_compute(const terrarium_calc_input_t *input, terrarium_calc_
         temp.lighting.power_w = 0.0f;
         temp.lighting.led_count = 0U;
         temp.lighting.power_per_led_w = led_power_unit;
+        input_invalid = true;
     }
 
-    if (input->uv_target_intensity > 0.0f && input->uv_module_intensity > 0.0f) {
-        const float uv_units = input->uv_target_intensity / input->uv_module_intensity;
+    if (uv_target > 0.0f && uv_module > 0.0f) {
+        const float uv_units = uv_target / uv_module;
         temp.uv.module_count = ceil_positive(uv_units);
         temp.uv.valid = true;
         temp.status_flags |= TERRARIUM_CALC_STATUS_UV_VALID;
     } else {
         temp.uv.valid = false;
         temp.uv.module_count = 0U;
+        input_invalid = true;
     }
 
     temp.substrate.volume_l = (floor_area_cm2 * substrate_thickness_cm) / 1000.0f;
     temp.substrate.valid = substrate_thickness_cm > 0.0f;
     if (temp.substrate.valid) {
         temp.status_flags |= TERRARIUM_CALC_STATUS_SUBSTRATE_VALID;
+    } else {
+        input_invalid = true;
     }
 
-    if (mist_density > 0.0f) {
+    if (mist_density >= TERRARIUM_MIST_DENSITY_MIN) {
         const float nozzle_units = floor_area_m2 / mist_density;
         temp.misting.nozzle_count = ceil_positive(nozzle_units);
         temp.misting.valid = true;
@@ -190,10 +201,15 @@ bool terrarium_calc_compute(const terrarium_calc_input_t *input, terrarium_calc_
     } else {
         temp.misting.valid = false;
         temp.misting.nozzle_count = 0U;
+        input_invalid = true;
     }
 
     if (clamped) {
         temp.status_flags |= TERRARIUM_CALC_STATUS_INPUT_CLAMPED;
+    }
+
+    if (input_invalid) {
+        temp.status_flags |= TERRARIUM_CALC_STATUS_INPUT_INVALID;
     }
 
     *result = temp;

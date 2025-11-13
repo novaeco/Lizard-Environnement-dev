@@ -30,6 +30,9 @@ typedef struct {
 
 typedef struct {
     i2c_port_t i2c_port;
+    gpio_num_t sda_io;
+    gpio_num_t scl_io;
+    gpio_num_t rst_io;
     gpio_num_t irq_io;
     uint8_t i2c_address;
     uint16_t logical_max_x;
