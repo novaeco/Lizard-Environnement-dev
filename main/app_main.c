@@ -365,7 +365,7 @@ static esp_err_t init_lvgl(void)
     s_display = lv_display_create(BOARD_LCD_H_RES, BOARD_LCD_V_RES);
     lv_display_set_color_format(s_display, LV_COLOR_FORMAT_RGB565);
     lv_display_set_flush_cb(s_display, lvgl_flush_cb);
-    lv_display_set_buffers(s_display, buf1, buf2, buffer_pixels, LV_DISPLAY_RENDER_MODE_PARTIAL);
+    lv_display_set_buffers(s_display, buf1, buf2, buffer_bytes, LV_DISPLAY_RENDER_MODE_PARTIAL);
     s_lvgl_buffers.buf1 = buf1;
     s_lvgl_buffers.buf2 = buf2;
 
