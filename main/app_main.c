@@ -38,9 +38,37 @@ static bool query_psram_once(void)
 {
     static bool s_checked;
     if (!s_checked) {
-        s_psram_available = esp_psram_is_initialized();
-        if (!s_psram_available) {
-            ESP_LOGW(TAG, "PSRAM not detected, using internal SRAM buffers");
+        esp_err_t init_err = ESP_OK;
+        size_t psram_bytes = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
+
+        if (!esp_psram_is_initialized() || psram_bytes == 0) {
+            init_err = esp_psram_init();
+            if (init_err != ESP_OK && init_err != ESP_ERR_INVALID_STATE) {
+                ESP_LOGW(TAG, "PSRAM init failed: %s", esp_err_to_name(init_err));
+            }
+        }
+
+        if (esp_psram_is_initialized()) {
+            psram_bytes = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
+            if (psram_bytes == 0) {
+                psram_bytes = esp_psram_get_size();
+            }
+            if (psram_bytes > 0) {
+                s_psram_available = true;
+                ESP_LOGI(TAG,
+                         "PSRAM ready: %u KB available",
+                         (unsigned)(psram_bytes / 1024));
+            } else {
+                ESP_LOGW(TAG, "PSRAM reported zero size, disabling PSRAM usage");
+                s_psram_available = false;
+            }
+        } else {
+            if (init_err == ESP_ERR_INVALID_STATE) {
+                ESP_LOGW(TAG, "PSRAM already initialised but status query failed");
+            } else {
+                ESP_LOGW(TAG, "PSRAM not initialised (err=%s)", esp_err_to_name(init_err));
+            }
+            s_psram_available = false;
         }
         s_checked = true;
     }
