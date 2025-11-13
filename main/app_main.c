@@ -396,10 +396,10 @@ static void update_results(terrarium_ui_ctx_t *ctx, const terrarium_calc_result_
 
     lv_label_set_text_fmt(
         ctx->heater_label,
-        "Surface sol : %.0f cm² (%.2f m²)\n"
-        "Tapis visé : %.0f cm² (côté %.1f cm)\n"
+        "Surface sol : %.0f cm^2 (%.2f m^2)\n"
+        "Tapis vise : %.0f cm^2 (cote %.1f cm)\n"
         "Puissance brute : %.1f W\n"
-        "Catalogue : %.1f W @ %.0f V (I=%.2f A, R=%.1f Ω)",
+        "Catalogue : %.1f W @ %.0f V (I=%.2f A, R=%.1f Ohm)",
         res->heating.floor_area_cm2,
         res->heating.floor_area_m2,
         res->heating.heater_target_area_cm2,
@@ -414,7 +414,7 @@ static void update_results(terrarium_ui_ctx_t *ctx, const terrarium_calc_result_
         ctx->lighting_label,
         "Flux lumineux : %.0f lm\n"
         "Puissance LED : %.1f W\n"
-        "Modules requis : %u (%.1f W/unité, %.1f W total)",
+        "Modules requis : %u (%.1f W/unite, %.1f W total)",
         res->lighting.luminous_flux_lm,
         res->lighting.power_w,
         (unsigned)res->lighting.led_count,
@@ -436,7 +436,7 @@ static void update_results(terrarium_ui_ctx_t *ctx, const terrarium_calc_result_
         "Buses de brumisation : %u",
         (unsigned)res->misting.nozzle_count);
 
-    lv_label_set_text(ctx->status_label, "Calcul réalisé ✔️");
+    lv_label_set_text(ctx->status_label, "Calcul realise OK");
 }
 
 static void calculate_event_cb(lv_event_t *e)
@@ -460,7 +460,7 @@ static void calculate_event_cb(lv_event_t *e)
     if (terrarium_calc_compute(&input, &result)) {
         update_results(ctx, &result);
     } else {
-        lv_label_set_text(ctx->status_label, "Entrées invalides – vérifiez les champs.");
+        lv_label_set_text(ctx->status_label, "Entrees invalides - verifiez les champs.");
     }
 }
 
@@ -518,10 +518,10 @@ static void build_ui(terrarium_ui_ctx_t *ctx)
     lv_obj_set_scroll_dir(root, LV_DIR_VER);
 
     lv_obj_t *title = lv_label_create(root);
-    lv_label_set_text(title, "TerrariumCalc – ESP32-S3 (Waveshare Touch LCD 7B)");
+    lv_label_set_text(title, "TerrariumCalc - ESP32-S3 (Waveshare Touch LCD 7B)");
 
     lv_obj_t *subtitle = lv_label_create(root);
-    lv_label_set_text(subtitle, "Calculez les équipements recommandés à partir des dimensions et contraintes lumineuses.");
+    lv_label_set_text(subtitle, "Calculez les equipements recommandes a partir des dimensions et contraintes lumineuses.");
 
     lv_obj_t *inputs_panel = lv_obj_create(root);
     lv_obj_set_size(inputs_panel, LV_PCT(100), LV_SIZE_CONTENT);
@@ -536,14 +536,14 @@ static void build_ui(terrarium_ui_ctx_t *ctx)
     ctx->length_cm = create_labeled_textarea(inputs_panel, "Longueur (cm)", "Ex: 120", "120");
     ctx->width_cm = create_labeled_textarea(inputs_panel, "Largeur (cm)", "Ex: 60", "60");
     ctx->height_cm = create_labeled_textarea(inputs_panel, "Hauteur (cm)", "Ex: 60", "60");
-    ctx->substrate_cm = create_labeled_textarea(inputs_panel, "Épaisseur substrat (cm)", "Ex: 8", "8");
-    ctx->lux_target = create_labeled_textarea(inputs_panel, "Cible d'éclairement (lux)", "Ex: 12000", "12000");
-    ctx->led_efficiency = create_labeled_textarea(inputs_panel, "Efficacité LED (lm/W)", "Ex: 160", "160");
+    ctx->substrate_cm = create_labeled_textarea(inputs_panel, "Epaisseur substrat (cm)", "Ex: 8", "8");
+    ctx->lux_target = create_labeled_textarea(inputs_panel, "Cible d'eclairement (lux)", "Ex: 12000", "12000");
+    ctx->led_efficiency = create_labeled_textarea(inputs_panel, "Efficacite LED (lm/W)", "Ex: 160", "160");
     ctx->led_power = create_labeled_textarea(inputs_panel, "Puissance par LED (W)", "Ex: 5", "5");
-    ctx->uv_target = create_labeled_textarea(inputs_panel, "Intensité UV cible", "Ex: 150", "150");
-    ctx->uv_module = create_labeled_textarea(inputs_panel, "Intensité par module UV", "Ex: 75", "75");
-    ctx->mist_density = create_labeled_textarea(inputs_panel, "Densité brumisation (m²/buse)", "Ex: 0.10", "0.10");
-    ctx->material_dd = create_labeled_dropdown(inputs_panel, "Matériau du plancher", "Bois\nVerre\nPVC\nAcrylique", 1);
+    ctx->uv_target = create_labeled_textarea(inputs_panel, "Intensite UV cible", "Ex: 150", "150");
+    ctx->uv_module = create_labeled_textarea(inputs_panel, "Intensite par module UV", "Ex: 75", "75");
+    ctx->mist_density = create_labeled_textarea(inputs_panel, "Densite brumisation (m^2/buse)", "Ex: 0.10", "0.10");
+    ctx->material_dd = create_labeled_dropdown(inputs_panel, "Materiau du plancher", "Bois\nVerre\nPVC\nAcrylique", 1);
 
     lv_obj_t *button = lv_button_create(root);
     lv_obj_set_height(button, LV_SIZE_CONTENT);
@@ -558,7 +558,7 @@ static void build_ui(terrarium_ui_ctx_t *ctx)
     lv_obj_center(btn_label);
 
     lv_obj_t *status = lv_label_create(root);
-    lv_label_set_text(status, "Saisissez les paramètres puis appuyez sur Calculer.");
+    lv_label_set_text(status, "Saisissez les parametres puis appuyez sur Calculer.");
     ctx->status_label = status;
 
     lv_obj_t *results_panel = lv_obj_create(root);
@@ -577,7 +577,7 @@ static void build_ui(terrarium_ui_ctx_t *ctx)
     lv_obj_set_width(ctx->heater_label, LV_PCT(100));
 
     ctx->lighting_label = lv_label_create(results_panel);
-    lv_label_set_text(ctx->lighting_label, "Éclairage LED : en attente de calcul.");
+    lv_label_set_text(ctx->lighting_label, "Eclairage LED : en attente de calcul.");
     lv_label_set_long_mode(ctx->lighting_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(ctx->lighting_label, LV_PCT(100));
 
