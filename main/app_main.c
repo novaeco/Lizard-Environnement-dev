@@ -22,25 +22,38 @@
 
 #include "board_waveshare_7b.h"
 #include "calc.h"
-#include "gt911.h"
+#include "gt911/gt911.h"
+
+__attribute__((weak)) void board_ch422g_enable(void) {}
 
 static const char *TAG = "app";
 
 static esp_lcd_panel_handle_t s_panel_handle;
 static esp_timer_handle_t s_lvgl_tick_timer;
 static gt911_handle_t s_touch_handle;
+static TaskHandle_t s_lvgl_task_handle;
+static lv_display_t *s_display;
+static lv_indev_t *s_touch_indev;
 static bool s_lvgl_task_wdt_registered;
 #if SOC_PSRAM_SUPPORTED
 static bool s_psram_available;
+#endif
 
+typedef struct {
+    lv_color_t *buf1;
+    lv_color_t *buf2;
+} lvgl_buffers_t;
+
+static lvgl_buffers_t s_lvgl_buffers;
+#if SOC_PSRAM_SUPPORTED
 static bool query_psram_once(void)
 {
     static bool s_checked;
     if (!s_checked) {
         esp_err_t init_err = ESP_OK;
-        size_t psram_bytes = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
+        size_t psram_bytes = 0;
 
-        if (!esp_psram_is_initialized() || psram_bytes == 0) {
+        if (!esp_psram_is_initialized()) {
             init_err = esp_psram_init();
             if (init_err != ESP_OK && init_err != ESP_ERR_INVALID_STATE) {
                 ESP_LOGW(TAG, "PSRAM init failed: %s", esp_err_to_name(init_err));
@@ -48,15 +61,22 @@ static bool query_psram_once(void)
         }
 
         if (esp_psram_is_initialized()) {
-            psram_bytes = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
+            psram_bytes = esp_psram_get_size();
             if (psram_bytes == 0) {
-                psram_bytes = esp_psram_get_size();
+                ESP_LOGW(TAG, "esp_psram_get_size returned 0, probing heap capabilities");
+                psram_bytes = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
             }
+
             if (psram_bytes > 0) {
-                s_psram_available = true;
-                ESP_LOGI(TAG,
-                         "PSRAM ready: %u KB available",
-                         (unsigned)(psram_bytes / 1024));
+                void *probe = heap_caps_malloc(64 * 1024, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+                if (probe) {
+                    heap_caps_free(probe);
+                    s_psram_available = true;
+                    ESP_LOGI(TAG, "PSRAM ready: %u KB available", (unsigned)(psram_bytes / 1024));
+                } else {
+                    ESP_LOGW(TAG, "PSRAM allocation probe failed despite reported size");
+                    s_psram_available = false;
+                }
             } else {
                 ESP_LOGW(TAG, "PSRAM reported zero size, disabling PSRAM usage");
                 s_psram_available = false;
@@ -164,6 +184,7 @@ static void lvgl_touch_read_cb(lv_indev_t *indev_drv, lv_indev_data_t *data)
 static void lvgl_task(void *arg)
 {
     (void)arg;
+    s_lvgl_task_handle = xTaskGetCurrentTaskHandle();
     esp_err_t wdt_err = esp_task_wdt_add(NULL);
     if (wdt_err == ESP_OK) {
         s_lvgl_task_wdt_registered = true;
@@ -201,8 +222,9 @@ static void enable_backlight(void)
     }
 }
 
-static void init_display(void)
+static esp_err_t init_display(void)
 {
+    board_ch422g_enable();
     init_backlight();
 
     esp_lcd_rgb_panel_config_t panel_config = {
@@ -257,17 +279,42 @@ static void init_display(void)
                  "PSRAM requis : activez CONFIG_SPIRAM pour allouer le framebuffer %ux%u RGB16",
                  BOARD_LCD_H_RES,
                  BOARD_LCD_V_RES);
-        ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
+        return ESP_ERR_NO_MEM;
     }
 
-    ESP_ERROR_CHECK(esp_lcd_new_rgb_panel(&panel_config, &s_panel_handle));
-    ESP_ERROR_CHECK(esp_lcd_panel_reset(s_panel_handle));
-    ESP_ERROR_CHECK(esp_lcd_panel_init(s_panel_handle));
-    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(s_panel_handle, true));
+    esp_err_t err = esp_lcd_new_rgb_panel(&panel_config, &s_panel_handle);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = esp_lcd_panel_reset(s_panel_handle);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = esp_lcd_panel_init(s_panel_handle);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = esp_lcd_panel_disp_on_off(s_panel_handle, true);
+    if (err != ESP_OK) {
+        return err;
+    }
     enable_backlight();
+    return ESP_OK;
 }
 
-static void init_lvgl(void)
+static void deinit_display(void)
+{
+    if (s_panel_handle) {
+        esp_lcd_panel_disp_on_off(s_panel_handle, false);
+        esp_lcd_panel_del(s_panel_handle);
+        s_panel_handle = NULL;
+    }
+    if (BOARD_LCD_PIN_BACKLIGHT != GPIO_NUM_NC) {
+        gpio_set_level(BOARD_LCD_PIN_BACKLIGHT, BOARD_LCD_BK_LIGHT_OFF_LEVEL);
+    }
+}
+
+static esp_err_t init_lvgl(void)
 {
     lv_init();
 
@@ -302,26 +349,80 @@ static void init_lvgl(void)
     if (!buf2) {
         buf2 = heap_caps_malloc(buffer_bytes, fallback_caps);
     }
-    ESP_ERROR_CHECK(buf1 ? ESP_OK : ESP_ERR_NO_MEM);
-    ESP_ERROR_CHECK(buf2 ? ESP_OK : ESP_ERR_NO_MEM);
+    if (!buf1 || !buf2) {
+        heap_caps_free(buf1);
+        heap_caps_free(buf2);
+        return ESP_ERR_NO_MEM;
+    }
 
-    lv_display_t *display = lv_display_create(BOARD_LCD_H_RES, BOARD_LCD_V_RES);
-    lv_display_set_flush_cb(display, lvgl_flush_cb);
-    lv_display_set_buffers(display, buf1, buf2, buffer_pixels, LV_DISPLAY_RENDER_MODE_PARTIAL);
+    s_display = lv_display_create(BOARD_LCD_H_RES, BOARD_LCD_V_RES);
+    lv_display_set_flush_cb(s_display, lvgl_flush_cb);
+    lv_display_set_buffers(s_display, buf1, buf2, buffer_pixels, LV_DISPLAY_RENDER_MODE_PARTIAL);
+    s_lvgl_buffers.buf1 = buf1;
+    s_lvgl_buffers.buf2 = buf2;
 
     const esp_lcd_rgb_panel_event_callbacks_t callbacks = {
         .on_color_trans_done = rgb_panel_color_trans_cb,
     };
-    ESP_ERROR_CHECK(esp_lcd_rgb_panel_register_event_callbacks(s_panel_handle, &callbacks, display));
+    esp_err_t err = esp_lcd_rgb_panel_register_event_callbacks(s_panel_handle, &callbacks, s_display);
+    if (err != ESP_OK) {
+        return err;
+    }
 
     esp_timer_create_args_t timer_args = {
         .callback = &lvgl_tick_cb,
         .name = "lvgl_tick",
     };
-    ESP_ERROR_CHECK(esp_timer_create(&timer_args, &s_lvgl_tick_timer));
-    ESP_ERROR_CHECK(esp_timer_start_periodic(s_lvgl_tick_timer, 5000));
+    err = esp_timer_create(&timer_args, &s_lvgl_tick_timer);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = esp_timer_start_periodic(s_lvgl_tick_timer, 5000);
+    if (err != ESP_OK) {
+        return err;
+    }
 
-    xTaskCreatePinnedToCore(lvgl_task, "lvgl", 8192, NULL, 4, NULL, 1);
+    BaseType_t created = xTaskCreatePinnedToCore(lvgl_task, "lvgl", 8192, NULL, 4, &s_lvgl_task_handle, 1);
+    if (created != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create LVGL task");
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+
+static void deinit_lvgl(void)
+{
+    deinit_touch();
+    TaskHandle_t task = s_lvgl_task_handle;
+    if (s_lvgl_task_wdt_registered) {
+        esp_task_wdt_delete(task);
+        s_lvgl_task_wdt_registered = false;
+    }
+    if (task) {
+        vTaskDelete(task);
+    }
+    if (s_lvgl_tick_timer) {
+        esp_timer_stop(s_lvgl_tick_timer);
+        esp_timer_delete(s_lvgl_tick_timer);
+        s_lvgl_tick_timer = NULL;
+    }
+    if (s_touch_indev) {
+        lv_indev_delete(s_touch_indev);
+        s_touch_indev = NULL;
+    }
+    if (s_display) {
+        lv_display_delete(s_display);
+        s_display = NULL;
+    }
+    if (s_lvgl_buffers.buf1) {
+        heap_caps_free(s_lvgl_buffers.buf1);
+        s_lvgl_buffers.buf1 = NULL;
+    }
+    if (s_lvgl_buffers.buf2) {
+        heap_caps_free(s_lvgl_buffers.buf2);
+        s_lvgl_buffers.buf2 = NULL;
+    }
+    s_lvgl_task_handle = NULL;
 }
 
 static void init_touch(void)
@@ -334,6 +435,11 @@ static void init_touch(void)
         .irq_io = BOARD_GT911_IRQ_IO,
         .i2c_clock_hz = BOARD_GT911_I2C_FREQ_HZ,
         .i2c_address = 0x14,
+        .logical_max_x = BOARD_LCD_H_RES,
+        .logical_max_y = BOARD_LCD_V_RES,
+        .invert_x = false,
+        .invert_y = true,
+        .swap_xy = false,
     };
 
     esp_err_t err = gt911_init(&cfg, &s_touch_handle);
@@ -342,9 +448,19 @@ static void init_touch(void)
         return;
     }
 
-    lv_indev_t *indev = lv_indev_create();
-    lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
-    lv_indev_set_read_cb(indev, lvgl_touch_read_cb);
+    s_touch_indev = lv_indev_create();
+    lv_indev_set_type(s_touch_indev, LV_INDEV_TYPE_POINTER);
+    lv_indev_set_read_cb(s_touch_indev, lvgl_touch_read_cb);
+    if (s_display) {
+        lv_indev_set_display(s_touch_indev, s_display);
+    }
+}
+
+static void deinit_touch(void)
+{
+    if (s_touch_handle.initialized) {
+        gt911_deinit(&s_touch_handle);
+    }
 }
 
 static float get_textarea_float(lv_obj_t *ta)
@@ -363,6 +479,10 @@ static float get_textarea_float(lv_obj_t *ta)
     for (size_t i = 0; i < len; ++i) {
         if (buffer[i] == ',') {
             buffer[i] = '.';
+        } else if (buffer[i] == ' ') {
+            memmove(&buffer[i], &buffer[i + 1], len - i);
+            --len;
+            --i;
         }
     }
     return strtof(buffer, NULL);
@@ -387,51 +507,76 @@ static terrarium_material_t get_material_from_dropdown(lv_obj_t *dd)
 
 static void update_results(terrarium_ui_ctx_t *ctx, const terrarium_calc_result_t *res)
 {
-    float led_total_power = res->lighting.led_count * res->lighting.power_per_led_w;
+    if (res->heating.valid) {
+        lv_label_set_text_fmt(
+            ctx->heater_label,
+            "Surface sol : %.0f cm^2 (%.2f m^2)\n"
+            "Volume utile : %.1f L\n"
+            "Tapis vise : %.0f cm^2 (cote %.1f cm)\n"
+            "Puissance brute : %.2f W\n"
+            "Catalogue : %.1f W @ %.0f V (I=%.2f A, R=%.1f Ohm)",
+            res->heating.floor_area_cm2,
+            res->heating.floor_area_m2,
+            res->heating.enclosure_volume_l,
+            res->heating.heater_target_area_cm2,
+            res->heating.heater_side_cm,
+            res->heating.heater_power_raw_w,
+            res->heating.heater_power_catalog_w,
+            res->heating.heater_voltage_v,
+            res->heating.heater_current_a,
+            res->heating.heater_resistance_ohm);
+    } else {
+        lv_label_set_text(ctx->heater_label, "Tapis chauffant : entrees invalides.");
+    }
 
+    if (res->lighting.valid) {
+        const float led_total_power = res->lighting.led_count * res->lighting.power_per_led_w;
+        lv_label_set_text_fmt(
+            ctx->lighting_label,
+            "Flux lumineux : %.0f lm\n"
+            "Puissance LED : %.1f W\n"
+            "Modules requis : %u (%.1f W/unite, %.1f W total)",
+            res->lighting.luminous_flux_lm,
+            res->lighting.power_w,
+            (unsigned)res->lighting.led_count,
+            res->lighting.power_per_led_w,
+            led_total_power);
+    } else {
+        lv_label_set_text(ctx->lighting_label, "Eclairage LED : renseignez lux, efficacite et puissance par module.");
+    }
+
+    if (res->uv.valid) {
+        lv_label_set_text_fmt(
+            ctx->uv_label,
+            "Modules UVA/UVB requis : %u",
+            (unsigned)res->uv.module_count);
+    } else {
+        lv_label_set_text(ctx->uv_label, "Modules UV : valeurs manquantes.");
+    }
+
+    if (res->substrate.valid) {
+        lv_label_set_text_fmt(
+            ctx->substrate_label,
+            "Volume de substrat : %.2f L",
+            res->substrate.volume_l);
+    } else {
+        lv_label_set_text(ctx->substrate_label, "Substrat : epaisseur nulle ou non specifiee.");
+    }
+
+    if (res->misting.valid) {
+        lv_label_set_text_fmt(
+            ctx->misting_label,
+            "Buses de brumisation : %u",
+            (unsigned)res->misting.nozzle_count);
+    } else {
+        lv_label_set_text(ctx->misting_label, "Brumisation : densite non valide.");
+    }
+
+    const bool clamped = (res->status_flags & TERRARIUM_CALC_STATUS_INPUT_CLAMPED) != 0;
     lv_label_set_text_fmt(
-        ctx->heater_label,
-        "Surface sol : %.0f cm^2 (%.2f m^2)\n"
-        "Tapis vise : %.0f cm^2 (cote %.1f cm)\n"
-        "Puissance brute : %.1f W\n"
-        "Catalogue : %.1f W @ %.0f V (I=%.2f A, R=%.1f Ohm)",
-        res->heating.floor_area_cm2,
-        res->heating.floor_area_m2,
-        res->heating.heater_target_area_cm2,
-        res->heating.heater_side_cm,
-        res->heating.heater_power_raw_w,
-        res->heating.heater_power_catalog_w,
-        res->heating.heater_voltage_v,
-        res->heating.heater_current_a,
-        res->heating.heater_resistance_ohm);
-
-    lv_label_set_text_fmt(
-        ctx->lighting_label,
-        "Flux lumineux : %.0f lm\n"
-        "Puissance LED : %.1f W\n"
-        "Modules requis : %u (%.1f W/unite, %.1f W total)",
-        res->lighting.luminous_flux_lm,
-        res->lighting.power_w,
-        (unsigned)res->lighting.led_count,
-        res->lighting.power_per_led_w,
-        led_total_power);
-
-    lv_label_set_text_fmt(
-        ctx->uv_label,
-        "Modules UVA/UVB requis : %u",
-        (unsigned)res->uv.module_count);
-
-    lv_label_set_text_fmt(
-        ctx->substrate_label,
-        "Volume de substrat : %.1f L",
-        res->substrate.volume_l);
-
-    lv_label_set_text_fmt(
-        ctx->misting_label,
-        "Buses de brumisation : %u",
-        (unsigned)res->misting.nozzle_count);
-
-    lv_label_set_text(ctx->status_label, "Calcul realise OK");
+        ctx->status_label,
+        "Calcul realise OK%s",
+        clamped ? " (entrees normalisees)" : "");
 }
 
 static void calculate_event_cb(lv_event_t *e)
@@ -474,8 +619,8 @@ static lv_obj_t *create_labeled_textarea(lv_obj_t *parent, const char *title, co
     lv_obj_t *ta = lv_textarea_create(cont);
     lv_textarea_set_one_line(ta, true);
     lv_textarea_set_placeholder_text(ta, placeholder);
-    lv_textarea_set_max_length(ta, 16);
-    lv_textarea_set_accepted_chars(ta, "0123456789.,");
+    lv_textarea_set_max_length(ta, 32);
+    lv_textarea_set_accepted_chars(ta, "0123456789.,-+eE");
     lv_obj_set_width(ta, LV_PCT(100));
     if (default_value) {
         lv_textarea_set_text(ta, default_value);
@@ -597,8 +742,21 @@ static void build_ui(terrarium_ui_ctx_t *ctx)
 void app_main(void)
 {
     configure_task_wdt();
-    init_display();
-    init_lvgl();
+    esp_err_t err = init_display();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Display init failed: %s", esp_err_to_name(err));
+        deinit_display();
+        return;
+    }
+
+    err = init_lvgl();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "LVGL init failed: %s", esp_err_to_name(err));
+        deinit_lvgl();
+        deinit_display();
+        return;
+    }
+
     init_touch();
 
     static terrarium_ui_ctx_t ui_ctx = {0};

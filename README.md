@@ -17,6 +17,15 @@ Projet ESP-IDF v6.1 ciblant l'ESP32-S3 et la dalle Waveshare Touch LCD 7B (1024�
 - Toolchain GCC 14 / LLVM fournie avec ESP-IDF 6.1 (support C gnu23 et C++ gnu++26).
 - Carte ESP32-S3 disposant de PSRAM et connectée au module Waveshare Touch LCD 7B selon les broches définies dans `main/board_waveshare_7b.h`. Activez impérativement la PSRAM Octal 80 MHz dans la configuration (voir `sdkconfig.defaults`) pour éviter l'échec d'initialisation `quad_psram: PSRAM ID read error` constaté lorsque le mode Quad par défaut est appliqué.
 
+### Versions logicielles embarquées
+
+- **LVGL** : 9.0.x (configuration personnalisée dans `main/lv_conf.h`, build en mode FreeRTOS).
+- **Pilotes ESP-IDF** : `esp_lcd_rgb_panel`, `esp_timer`, `esp_task_wdt`, `esp_driver_gpio`, `esp_driver_i2c`.
+- **Module tactile** : pilote GT911 interne (`components/gt911`).
+- **Module de calcul** : bibliothèque métier interne (`components/calc`) couverte par des tests Unity.
+
+> Mettez à jour ces versions si vous migrez l'application afin de conserver une traçabilité logicielle complète.
+
 ## Configuration & compilation (ESP-IDF 6.1)
 
 ```bash
@@ -39,6 +48,7 @@ Remplacez `/dev/ttyUSB0` par le port série de votre cible. La configuration par
 - `CONFIG_SPIRAM_USE_MALLOC=y`, `CONFIG_SPIRAM_USE_CAPS_ALLOC=y` et `CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y` permettent à LVGL d'allouer ses buffers en PSRAM tout en conservant des tampons de secours en SRAM interne.
 - `CONFIG_LV_COLOR_DEPTH_16=y` doit être activé pour conserver l'interface en RGB565. Vérifiez aussi `CONFIG_LV_USE_LOG=y` et `CONFIG_LV_LOG_LEVEL_INFO=y` pour conserver un suivi runtime cohérent.
 - `CONFIG_ESP_TASK_WDT_INIT=y` et `CONFIG_ESP_TASK_WDT_TIMEOUT_S=12` garantissent la compatibilité avec la reconfiguration du watchdog via `esp_task_wdt_reconfigure()` introduite dans l'IDF 6.x.
+- `CONFIG_LOG_DEFAULT_LEVEL_INFO=y` et `CONFIG_I2C_ISR_IRAM_SAFE=y` facilitent le diagnostic matériel.
 
 ## Interface & usage
 
@@ -85,6 +95,21 @@ TerrariumCalc-ESP32S3/
 - Les buffers LVGL (2 × 1/10ᵉ de l’écran) sont alloués en PSRAM ; assurez-vous que la PSRAM est opérationnelle (`CONFIG_SPIRAM=y`).
 - Le pilote GT911 considère l’adresse I²C 0x14 (7 bits). Modifiez `gt911_config_t.i2c_address` si votre module utilise 0x5D.
 
+### Calibration tactile & dépannage
+
+1. Vérifiez que `board_ch422g_enable()` alimente la dalle avant l'initialisation LCD (sinon écran noir).
+2. Lancez l'application et observez les logs `gt911`: un message `GT911 product ID` doit apparaître.
+3. Si le tactile semble inversé, ajustez `gt911_config_t.invert_x`, `gt911_config_t.invert_y` ou `gt911_config_t.swap_xy` dans `app_main.c`.
+4. En cas d'absence totale d'évènements, validez le câblage IRQ (GPIO4) et SDA/SCL avec un oscilloscope puis activez `CONFIG_I2C_RECOVER_CLK_GPIO` pour forcer un reset bus.
+5. Pour recalibrer LVGL, modifiez `gt911_config_t.logical_max_x/y` afin de correspondre exactement à la résolution 1024×600.
+
+### Procédure de test automatisé
+
+- `idf.py build flash monitor` : vérifie l'intégration complète sur cible.
+- `idf.py build -T components/calc` : exécute les tests Unity de la bibliothèque de calcul.
+
+Consultez `components/calc/test/test_calc.c` pour les cas limite couverts.
+
 ## Validation attendue
 
 - Compilation sans avertissements bloquants (`idf.py build`) sous ESP-IDF 6.1 (warnings traités en erreurs par défaut).
@@ -92,3 +117,13 @@ TerrariumCalc-ESP32S3/
 - Calculs conformes aux formules spécifiées : densité 0,040 W/cm², coefficients matériaux, arrondi catalogue, conversions m² / litres, arrondis supérieurs pour LED, UV et buses.
 
 Pour des tests unitaires supplémentaires, vous pouvez isoler `components/calc` et l’intégrer dans un projet d’hôte (Unity/CMock) afin de valider les cas limites des calculs.
+
+## Licence
+
+Projet distribué sous licence **MIT**. Voir le fichier `LICENSE` pour le texte intégral. Les bibliothèques tierces conservent leurs licences respectives (LVGL, ESP-IDF).
+
+## Résolution des incidents connus
+
+- **PSRAM absente** : l'application reste fonctionnelle mais désactive LVGL (message « PSRAM requis »). Activez `CONFIG_SPIRAM` et vérifiez `esp_psram_get_size()` dans les logs.
+- **Écran blanc ou tearing** : ajustez `BOARD_LCD_PIXEL_CLOCK_HZ` (>=18 MHz recommandé) et les timings HPW/HBP/HFP pour respecter la datasheet ST7262.
+- **Watchdog LVGL** : si l'UI se fige, contrôlez les logs `LVGL watchdog tripped` et inspectez les traitements lourds dans `lv_timer`.
