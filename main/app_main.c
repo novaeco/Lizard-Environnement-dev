@@ -58,7 +58,10 @@ static bool query_psram_once(void)
         if (!initialised) {
             esp_err_t init_err = esp_psram_init();
             if (init_err == ESP_OK) {
-                initialised = true;
+                initialised = esp_psram_is_initialized();
+            } else if (init_err == ESP_ERR_INVALID_STATE) {
+                initialised = esp_psram_is_initialized();
+                ESP_LOGI(TAG, "PSRAM already initialised by bootloader");
             } else {
                 ESP_LOGW(TAG, "Failed to initialise PSRAM: %s", esp_err_to_name(init_err));
             }
@@ -275,6 +278,11 @@ static esp_err_t init_display(void)
         return ESP_ERR_NO_MEM;
     }
 
+    ESP_LOGI(TAG,
+             "Initialising RGB panel with framebuffer in PSRAM (%ux%u RGB16)",
+             BOARD_LCD_H_RES,
+             BOARD_LCD_V_RES);
+
     esp_err_t err = esp_lcd_new_rgb_panel(&panel_config, &s_panel_handle);
     if (err != ESP_OK) {
         return err;
@@ -319,6 +327,7 @@ static esp_err_t init_lvgl(void)
 
     lv_color_t *buf1 = NULL;
     lv_color_t *buf2 = NULL;
+    bool buffers_in_psram = false;
 
     if (query_psram_once()) {
         buf1 = heap_caps_malloc(buffer_bytes, preferred_caps);
@@ -333,6 +342,8 @@ static esp_err_t init_lvgl(void)
                 heap_caps_free(buf2);
                 buf2 = NULL;
             }
+        } else {
+            buffers_in_psram = true;
         }
     }
 
@@ -347,6 +358,11 @@ static esp_err_t init_lvgl(void)
         heap_caps_free(buf2);
         return ESP_ERR_NO_MEM;
     }
+
+    ESP_LOGI(TAG,
+             "LVGL draw buffers: %zu bytes each allocated in %s",
+             buffer_bytes,
+             buffers_in_psram ? "PSRAM" : "internal SRAM");
 
     s_display = lv_display_create(BOARD_LCD_H_RES, BOARD_LCD_V_RES);
     lv_display_set_color_format(s_display, LV_COLOR_FORMAT_RGB565);
