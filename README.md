@@ -127,6 +127,6 @@ Projet distribué sous licence **MIT**. Voir le fichier `LICENSE` pour le texte 
 
 ## Résolution des incidents connus
 
-- **PSRAM absente** : l'application s'arrête après le log « PSRAM requis ». Activez `CONFIG_SPIRAM` et vérifiez `esp_psram_get_size()` dans les logs avant de relancer.
+- **PSRAM absente** : depuis la v1.1, l'application se met en pause après avoir désactivé le Task WDT et laisse la console ouverte avec le message « Système en pause ». Activez `CONFIG_SPIRAM` (ou désactivez-le si votre module n'en dispose pas) puis redémarrez ; vérifiez `esp_psram_get_size()` dans les logs avant de relancer.
 - **Écran blanc ou tearing** : ajustez `BOARD_LCD_PIXEL_CLOCK_HZ` (>=18 MHz recommandé) et les timings HPW/HBP/HFP pour respecter la datasheet ST7262.
 - **Watchdog LVGL** : si l'UI se fige, contrôlez les logs `LVGL watchdog tripped` et inspectez les traitements lourds dans `lv_timer`.
