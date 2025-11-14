@@ -49,6 +49,41 @@ static lvgl_buffers_t s_lvgl_buffers;
 static esp_err_t init_touch(void);
 static void deinit_touch(void);
 static esp_err_t start_lvgl_task(void);
+static void enter_safe_fault_state(const char *stage, esp_err_t err);
+
+static void enter_safe_fault_state(const char *stage, esp_err_t err)
+{
+    if (stage) {
+        if (err == ESP_OK) {
+            ESP_LOGE(TAG, "Arret dans l'etat %s sans code d'erreur explicite", stage);
+        } else {
+            ESP_LOGE(TAG,
+                     "Echec critique pendant %s: %s (0x%x)",
+                     stage,
+                     esp_err_to_name(err),
+                     (unsigned)err);
+        }
+    }
+#if SOC_PSRAM_SUPPORTED
+    if (!query_psram_once()) {
+        ESP_LOGW(TAG,
+                 "PSRAM indisponible. Verifiez le cablage / l'activation BIOS et recompiliez sans "
+                 "CONFIG_SPIRAM si votre carte n'en possede pas.");
+    }
+#endif
+#if CONFIG_ESP_TASK_WDT_INIT
+    esp_err_t wdt_err = esp_task_wdt_deinit();
+    if (wdt_err != ESP_OK && wdt_err != ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(TAG, "Impossible de desactiver le Task WDT: %s", esp_err_to_name(wdt_err));
+    } else {
+        ESP_LOGI(TAG, "Task WDT desactive pour conserver la console serie stable");
+    }
+#endif
+    ESP_LOGE(TAG, "Systeme en pause. Corrigez la cause puis redemarrez l'ESP32-S3.");
+    while (true) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
 #if SOC_PSRAM_SUPPORTED
 static bool query_psram_once(void)
 {
@@ -769,12 +804,11 @@ static void build_ui(terrarium_ui_ctx_t *ctx)
 
 void app_main(void)
 {
-    configure_task_wdt();
     esp_err_t err = init_display();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Display init failed: %s", esp_err_to_name(err));
         deinit_display();
-        return;
+        enter_safe_fault_state("initialisation de l'ecran", err);
     }
 
     err = init_lvgl();
@@ -782,8 +816,10 @@ void app_main(void)
         ESP_LOGE(TAG, "LVGL init failed: %s", esp_err_to_name(err));
         deinit_lvgl();
         deinit_display();
-        return;
+        enter_safe_fault_state("initialisation LVGL", err);
     }
+
+    configure_task_wdt();
 
     static terrarium_ui_ctx_t ui_ctx = {0};
     build_ui(&ui_ctx);
@@ -798,6 +834,9 @@ void app_main(void)
     if (err != ESP_OK) {
         lv_label_set_text(ui_ctx.status_label, "Erreur critique LVGL (tache non demarree).");
         ESP_LOGE(TAG, "Unable to start LVGL task (%s)", esp_err_to_name(err));
+        deinit_lvgl();
+        deinit_display();
+        enter_safe_fault_state("demarrage de la tache LVGL", err);
     }
 }
 
