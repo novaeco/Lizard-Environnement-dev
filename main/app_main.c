@@ -55,8 +55,16 @@ static bool query_psram_once(void)
     static bool s_checked;
     if (!s_checked) {
         bool initialised = esp_psram_is_initialized();
-        size_t psram_bytes = 0;
+        if (!initialised) {
+            esp_err_t init_err = esp_psram_init();
+            if (init_err == ESP_OK) {
+                initialised = true;
+            } else {
+                ESP_LOGW(TAG, "Failed to initialise PSRAM: %s", esp_err_to_name(init_err));
+            }
+        }
 
+        size_t psram_bytes = 0;
         if (initialised) {
             psram_bytes = esp_psram_get_size();
             if (psram_bytes > 0) {
