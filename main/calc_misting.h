@@ -32,6 +32,8 @@ typedef struct {
     float tank_volume_autonomy3_l;
     float tank_volume_autonomy7_l;
     bool warning_dense_spray;
+    bool warning_sparse_spray;
+    bool warning_flow_out_of_range;
 } misting_result_t;
 
 bool misting_calculate(const misting_input_t *in, misting_result_t *out);
