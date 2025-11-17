@@ -12,10 +12,15 @@
 #include "ui_screens_lighting.h"
 #include "ui_screens_misting.h"
 #include "ui_screens_pad.h"
+#include "ui_screens_about.h"
 #include "ui_screens_substrate.h"
 
 static void apply_theme(void)
 {
+    lv_display_t *disp = lv_display_get_default();
+    lv_theme_t *th = lv_theme_default_init(disp, lv_palette_main(LV_PALETTE_BLUE), lv_palette_lighten(LV_PALETTE_GREY, 2),
+                                           false, LV_FONT_DEFAULT);
+    lv_display_set_theme(disp, th);
     lv_theme_t *th = lv_theme_default_init(lv_display_get_default(), lv_palette_main(LV_PALETTE_BLUE_GREY),
                                            lv_palette_darken(LV_PALETTE_GREY, 2), false, LV_FONT_DEFAULT);
     lv_display_set_theme(lv_display_get_default(), th);
@@ -26,6 +31,7 @@ void ui_main_init(void)
     apply_theme();
 
     lv_obj_t *scr = lv_screen_active();
+    lv_obj_set_style_bg_color(scr, lv_color_hex(0x0B1220), LV_PART_MAIN);
     lv_obj_set_style_bg_color(scr, lv_color_hex(0x0F172A), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(scr, LV_OPA_100, LV_PART_MAIN);
 
@@ -55,6 +61,7 @@ void ui_main_init(void)
     lv_obj_t *tab_light = lv_tabview_add_tab(tabview, "Éclairage");
     lv_obj_t *tab_substrate = lv_tabview_add_tab(tabview, "Substrat");
     lv_obj_t *tab_mist = lv_tabview_add_tab(tabview, "Brumisation");
+    lv_obj_t *tab_about = lv_tabview_add_tab(tabview, "Sécurité");
 
     ui_keyboard_create(root);
 
@@ -64,5 +71,6 @@ void ui_main_init(void)
     ui_screen_lighting_build(tab_light);
     ui_screen_substrate_build(tab_substrate);
     ui_screen_misting_build(tab_mist);
+    ui_screen_about_build(tab_about);
 }
 

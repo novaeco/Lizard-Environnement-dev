@@ -29,6 +29,9 @@ typedef struct {
     uint32_t nozzle_count;
     float daily_consumption_l;
     float tank_volume_l;
+    float tank_volume_autonomy3_l;
+    float tank_volume_autonomy7_l;
+    bool warning_dense_spray;
 } misting_result_t;
 
 bool misting_calculate(const misting_input_t *in, misting_result_t *out);

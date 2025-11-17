@@ -4,6 +4,7 @@
 #include <stdlib.h>
 
 #include "calc_substrate.h"
+#include "storage.h"
 #include "ui_keyboard.h"
 
 static float parse_float(const char *txt, float def)
@@ -11,6 +12,14 @@ static float parse_float(const char *txt, float def)
     if (!txt || txt[0] == '\0') {
         return def;
     }
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%s", txt);
+    for (size_t i = 0; i < sizeof(buf); ++i) {
+        if (buf[i] == ',') {
+            buf[i] = '.';
+        }
+    }
+    return strtof(buf, NULL);
     return strtof(txt, NULL);
 }
 
@@ -49,6 +58,7 @@ static void create_input_row(lv_obj_t *parent, const char *label, lv_obj_t **ta,
     lv_textarea_set_placeholder_text(*ta, placeholder);
     lv_textarea_set_max_length(*ta, 8);
     lv_obj_set_width(*ta, LV_PCT(100));
+    ui_keyboard_attach_numeric(*ta, true);
     ui_keyboard_attach(*ta);
 }
 
@@ -72,6 +82,18 @@ static void calculate_cb(lv_event_t *e)
 
     substrate_result_t out = {0};
     if (substrate_calculate(&in, &out) && out.valid) {
+        char buf[256];
+        snprintf(buf,
+                 sizeof(buf),
+                 "Volume: %.1f L\nMasse: %.1f-%.1f kg (densité %.2f-%.2f kg/L)\nNominal: %.1f kg",
+                 out.volume_l,
+                 out.mass_min_kg,
+                 out.mass_max_kg,
+                 out.density_min_kg_per_l,
+                 out.density_max_kg_per_l,
+                 out.mass_kg);
+        lv_label_set_text(out_label, buf);
+        storage_save_substrate(&in);
         char buf[192];
         snprintf(buf,
                  sizeof(buf),
@@ -100,6 +122,18 @@ void ui_screen_substrate_build(lv_obj_t *parent)
     lv_obj_set_flex_flow(inputs, LV_FLEX_FLOW_ROW_WRAP);
     lv_obj_set_width(inputs, LV_PCT(100));
 
+    substrate_input_t defaults = {0};
+    storage_load_substrate(&defaults);
+    char tmp[16];
+
+    lv_obj_t *length_ta; create_input_row(inputs, "Longueur (cm)", &length_ta, "100");
+    snprintf(tmp, sizeof(tmp), "%.0f", defaults.length_cm); lv_textarea_set_text(length_ta, tmp);
+    lv_obj_t *depth_ta; create_input_row(inputs, "Profondeur (cm)", &depth_ta, "60");
+    snprintf(tmp, sizeof(tmp), "%.0f", defaults.depth_cm); lv_textarea_set_text(depth_ta, tmp);
+    lv_obj_t *height_ta; create_input_row(inputs, "Hauteur (cm)", &height_ta, "60");
+    snprintf(tmp, sizeof(tmp), "%.0f", defaults.height_cm); lv_textarea_set_text(height_ta, tmp);
+    lv_obj_t *substrate_ta; create_input_row(inputs, "Hauteur substrat (cm)", &substrate_ta, "8");
+    snprintf(tmp, sizeof(tmp), "%.1f", defaults.substrate_height_cm); lv_textarea_set_text(substrate_ta, tmp);
     lv_obj_t *length_ta; create_input_row(inputs, "Longueur (cm)", &length_ta, "100");
     lv_obj_t *depth_ta; create_input_row(inputs, "Profondeur (cm)", &depth_ta, "60");
     lv_obj_t *height_ta; create_input_row(inputs, "Hauteur (cm)", &height_ta, "60");
@@ -116,6 +150,7 @@ void ui_screen_substrate_build(lv_obj_t *parent)
     lv_label_set_text(type_lbl, "Type de substrat");
     lv_obj_t *type_dd = lv_dropdown_create(type_cont);
     lv_dropdown_set_options(type_dd, "Terreau\nFibre coco\nMélange forestier\nSable\nSable/terre");
+    lv_dropdown_set_selected(type_dd, defaults.type);
     lv_dropdown_set_selected(type_dd, 2);
 
     lv_obj_t *btn = lv_button_create(parent);
@@ -128,6 +163,13 @@ void ui_screen_substrate_build(lv_obj_t *parent)
     lv_obj_set_width(out, LV_PCT(100));
     lv_label_set_long_mode(out, LV_LABEL_LONG_WRAP);
     lv_label_set_text(out, "Résultats substrat en attente.");
+
+    lv_obj_t *help = lv_label_create(parent);
+    lv_obj_set_width(help, LV_PCT(100));
+    lv_label_set_long_mode(help, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(help,
+                      "Densités typiques : terreau 0,65-0,85 kg/L, coco 0,45-0,65 kg/L, forêt 0,60-0,80 kg/L, sable 1,5-1,7 kg/L."
+                      " Prévoir +10% pour tassement et pertes.");
 
     static lv_obj_t *controls[6];
     controls[0] = length_ta;

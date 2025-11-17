@@ -25,10 +25,19 @@ typedef struct {
     float total_power_w;
     uint32_t led_count;
     float recommended_distance_cm;
+    float area_m2;
 } lighting_led_result_t;
 
 typedef struct {
     bool valid;
+    float target_uvi_min;
+    float target_uvi_max;
+    uint32_t module_count;
+    float recommended_distance_cm;
+    float estimated_uvi_at_distance;
+    float estimated_total_uvi;
+    bool warning_high;
+    bool warning_low;
     float target_uvi;
     uint32_t module_count;
     float recommended_distance_cm;

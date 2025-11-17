@@ -27,6 +27,11 @@ typedef struct {
     bool valid;
     float volume_l;
     float mass_kg;
+    float mass_min_kg;
+    float mass_max_kg;
+    float density_kg_per_l;
+    float density_min_kg_per_l;
+    float density_max_kg_per_l;
     float density_kg_per_l;
 } substrate_result_t;
 

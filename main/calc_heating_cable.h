@@ -14,6 +14,7 @@ typedef struct {
     float power_linear_w_per_m;
     float supply_voltage_v;
     float target_power_density_w_per_cm2;
+    float spacing_cm;
 } heating_cable_input_t;
 
 typedef struct {
@@ -22,6 +23,12 @@ typedef struct {
     float target_power_w;
     float recommended_length_m;
     float resulting_density_w_per_cm2;
+    float spacing_cm;
+    float estimated_current_a;
+    float estimated_resistance_ohm;
+    bool warning_density_high;
+    bool warning_spacing_too_tight;
+    bool warning_high_voltage;
     bool warning_density_high;
 } heating_cable_result_t;
 

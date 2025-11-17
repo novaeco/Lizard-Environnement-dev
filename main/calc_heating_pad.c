@@ -3,6 +3,19 @@
 #include <math.h>
 #include <stdio.h>
 
+typedef struct {
+    float heated_area_cm2;
+    float power_w;
+} calibration_point_t;
+
+static const calibration_point_t k_calibration[] = {
+    {.heated_area_cm2 = 120.0f, .power_w = 5.0f},
+    {.heated_area_cm2 = 184.0f, .power_w = 7.5f},
+    {.heated_area_cm2 = 377.0f, .power_w = 15.0f},
+    {.heated_area_cm2 = 865.0f, .power_w = 35.0f},
+    {.heated_area_cm2 = 1947.0f, .power_w = 78.0f},
+};
+
 static float clampf(float v, float min, float max)
 {
     if (v < min) {
@@ -18,6 +31,7 @@ static float material_coeff(terrarium_material_t m)
 {
     switch (m) {
     case TERRARIUM_MATERIAL_WOOD:
+        return 0.88f; // bois isolé, pertes moindres
         return 0.88f; // bois isolé
     case TERRARIUM_MATERIAL_GLASS:
         return 1.00f; // référence
@@ -34,6 +48,11 @@ static float density_limit(terrarium_material_t m)
 {
     switch (m) {
     case TERRARIUM_MATERIAL_GLASS:
+        return 0.055f; // fiches tapis 0,035-0,055 W/cm² sur verre
+    case TERRARIUM_MATERIAL_WOOD:
+        return 0.065f; // bois supporte mieux, mais surveiller l'isolation
+    case TERRARIUM_MATERIAL_PVC:
+        return 0.050f; // PVC sensible à la chaleur (déformation)
         return 0.055f; // prudence sur verre
     case TERRARIUM_MATERIAL_WOOD:
         return 0.065f; // bois supporte mieux
@@ -44,6 +63,27 @@ static float density_limit(terrarium_material_t m)
     default:
         return 0.050f;
     }
+}
+
+static float interpolated_density(float heated_area_cm2)
+{
+    // Interpolation linéaire sur les points catalogues fournis (densité moyenne 0,040-0,042 W/cm²)
+    const size_t n = sizeof(k_calibration) / sizeof(k_calibration[0]);
+    if (heated_area_cm2 <= k_calibration[0].heated_area_cm2) {
+        return k_calibration[0].power_w / k_calibration[0].heated_area_cm2;
+    }
+    for (size_t i = 1; i < n; ++i) {
+        const calibration_point_t *a = &k_calibration[i - 1];
+        const calibration_point_t *b = &k_calibration[i];
+        if (heated_area_cm2 <= b->heated_area_cm2) {
+            float t = (heated_area_cm2 - a->heated_area_cm2) / (b->heated_area_cm2 - a->heated_area_cm2);
+            float power = a->power_w + t * (b->power_w - a->power_w);
+            return power / heated_area_cm2;
+        }
+    }
+    // extrapolation douce au-delà du dernier point avec légère réduction pour limiter les surchauffes sur grandes surfaces
+    float last_density = k_calibration[n - 1].power_w / k_calibration[n - 1].heated_area_cm2;
+    return last_density * clampf(1947.0f / heated_area_cm2, 0.85f, 1.0f);
 }
 
 static float round_catalog_power(float p)
@@ -63,6 +103,7 @@ bool heating_pad_calculate(const heating_pad_input_t *in, heating_pad_result_t *
     if (!in || !out) {
         return false;
     }
+    if (in->length_cm < 5.0f || in->depth_cm < 5.0f || in->height_cm <= 0.0f) {
     if (in->length_cm <= 0.0f || in->depth_cm <= 0.0f || in->height_cm <= 0.0f) {
         return false;
     }
@@ -75,6 +116,10 @@ bool heating_pad_calculate(const heating_pad_input_t *in, heating_pad_result_t *
     const float heater_side = sqrtf(heated_area);
     const float coeff = material_coeff(in->material);
 
+    // densité issue du tableau + correction hauteur (terrariums hauts = pertes verticales)
+    const float density_catalog = interpolated_density(heated_area);
+    const float height_factor = clampf(in->height_cm / 50.0f, 0.8f, 1.35f);
+    const float power_raw = heated_area * density_catalog * coeff * height_factor;
     /*
      * Modèle issu du tableau fourni (~0,040 W/cm² en moyenne sur 1/3 de surface),
      * ajusté par le coefficient de matériau et par le volume (hauteur) pour éviter
@@ -88,6 +133,7 @@ bool heating_pad_calculate(const heating_pad_input_t *in, heating_pad_result_t *
     const float current = power_catalog / voltage;
     const float resistance = (voltage * voltage) / power_catalog;
     const float density = power_catalog / heated_area;
+    const float limit = density_limit(in->material);
 
     r.valid = true;
     r.floor_area_cm2 = floor_area;
@@ -95,6 +141,12 @@ bool heating_pad_calculate(const heating_pad_input_t *in, heating_pad_result_t *
     r.heater_side_cm = roundf(heater_side * 2.0f) / 2.0f;
     r.power_w = power_catalog;
     r.power_density_w_per_cm2 = density;
+    r.density_limit_w_per_cm2 = limit;
+    r.voltage_v = voltage;
+    r.current_a = current;
+    r.resistance_ohm = resistance;
+    r.warning_density_high = density > limit * 0.9f;
+    r.warning_density_over = density > limit;
     r.voltage_v = voltage;
     r.current_a = current;
     r.resistance_ohm = resistance;

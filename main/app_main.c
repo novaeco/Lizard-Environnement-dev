@@ -27,6 +27,7 @@
 #include "calc_misting.h"
 #include "calc_substrate.h"
 #include "gt911/gt911.h"
+#include "storage.h"
 #include "ui_main.h"
 
 __attribute__((weak)) void board_ch422g_enable(void) {}
@@ -507,6 +508,7 @@ static void run_self_tests(void)
 
 void app_main(void)
 {
+    ESP_ERROR_CHECK(storage_init());
     esp_err_t err = init_display();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Display init failed: %s", esp_err_to_name(err));

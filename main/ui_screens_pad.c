@@ -4,6 +4,7 @@
 #include <stdlib.h>
 
 #include "calc_heating_pad.h"
+#include "storage.h"
 #include "ui_keyboard.h"
 
 static float parse_float(const char *txt, float def)
@@ -11,6 +12,20 @@ static float parse_float(const char *txt, float def)
     if (!txt || txt[0] == '\0') {
         return def;
     }
+    char *end = NULL;
+    float v = strtof(txt, &end);
+    if (end && *end == '\0') {
+        return v;
+    }
+    // Essaye avec virgule décimale
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%s", txt);
+    for (size_t i = 0; i < sizeof(buf); ++i) {
+        if (buf[i] == ',') {
+            buf[i] = '.';
+        }
+    }
+    return strtof(buf, NULL);
     return strtof(txt, NULL);
 }
 
@@ -49,6 +64,7 @@ static void create_input_row(lv_obj_t *parent, const char *label, lv_obj_t **ta,
     lv_textarea_set_placeholder_text(*ta, placeholder);
     lv_textarea_set_max_length(*ta, 8);
     lv_obj_set_width(*ta, LV_PCT(100));
+    ui_keyboard_attach_numeric(*ta, true);
     ui_keyboard_attach(*ta);
 }
 
@@ -76,6 +92,8 @@ static void calculate_cb(lv_event_t *e)
                  sizeof(buf),
                  "Surface chauffée: %.0f cm² (≈%.1f cm de côté)\n"
                  "Puissance catalogue: %.1f W (densité %.3f W/cm²)\n"
+                 "Tension %.0f V, I=%.2f A, R=%.1f Ω\n"
+                 "Limite matière: %.3f W/cm²\n%s%s",
                  "Tension %.0f V, I=%.2f A, R=%.1f Ω\n%s",
                  out.heated_area_cm2,
                  out.heater_side_cm,
@@ -84,6 +102,13 @@ static void calculate_cb(lv_event_t *e)
                  out.voltage_v,
                  out.current_a,
                  out.resistance_ohm,
+                 out.density_limit_w_per_cm2,
+                 out.warning_density_over ? "ALERTE : densité dépasse la limite matière. " : "",
+                 (!out.warning_density_over && out.warning_density_high)
+                     ? "Avertissement : densité proche de la limite, réduire le ratio ou la puissance."
+                     : "Densité dans la plage sécurisée.");
+        lv_label_set_text(out_label, buf);
+        storage_save_heating_pad(&in);
                  out.warning_density_high ? "Alerte : densité proche de la limite matière." : "Densité dans la plage sécurisée.");
         lv_label_set_text(out_label, buf);
     } else {
@@ -106,6 +131,22 @@ void ui_screen_pad_build(lv_obj_t *parent)
     lv_obj_set_flex_flow(inputs, LV_FLEX_FLOW_ROW_WRAP);
     lv_obj_set_width(inputs, LV_PCT(100));
 
+    heating_pad_input_t defaults = {0};
+    storage_load_heating_pad(&defaults);
+
+    lv_obj_t *length_ta; create_input_row(inputs, "Longueur (cm)", &length_ta, "100");
+    char tmp[16];
+    snprintf(tmp, sizeof(tmp), "%.0f", defaults.length_cm);
+    lv_textarea_set_text(length_ta, tmp);
+    lv_obj_t *depth_ta; create_input_row(inputs, "Profondeur (cm)", &depth_ta, "60");
+    snprintf(tmp, sizeof(tmp), "%.0f", defaults.depth_cm);
+    lv_textarea_set_text(depth_ta, tmp);
+    lv_obj_t *height_ta; create_input_row(inputs, "Hauteur (cm)", &height_ta, "60");
+    snprintf(tmp, sizeof(tmp), "%.0f", defaults.height_cm);
+    lv_textarea_set_text(height_ta, tmp);
+    lv_obj_t *ratio_ta; create_input_row(inputs, "Ratio surface chauffée (0.2-0.6)", &ratio_ta, "0.33");
+    snprintf(tmp, sizeof(tmp), "%.2f", defaults.heated_ratio);
+    lv_textarea_set_text(ratio_ta, tmp);
     lv_obj_t *length_ta; create_input_row(inputs, "Longueur (cm)", &length_ta, "100");
     lv_obj_t *depth_ta; create_input_row(inputs, "Profondeur (cm)", &depth_ta, "60");
     lv_obj_t *height_ta; create_input_row(inputs, "Hauteur (cm)", &height_ta, "60");
@@ -122,6 +163,11 @@ void ui_screen_pad_build(lv_obj_t *parent)
     lv_label_set_text(mat_lbl, "Matériau plancher");
     lv_obj_t *material_dd = lv_dropdown_create(mat_cont);
     lv_dropdown_set_options(material_dd, "Bois\nVerre\nPVC\nAcrylique");
+    lv_dropdown_set_selected(material_dd, defaults.material == TERRARIUM_MATERIAL_WOOD
+                                                 ? 0
+                                                 : defaults.material == TERRARIUM_MATERIAL_GLASS
+                                                       ? 1
+                                                       : defaults.material == TERRARIUM_MATERIAL_PVC ? 2 : 3);
     lv_dropdown_set_selected(material_dd, 1);
 
     lv_obj_t *btn = lv_button_create(parent);
@@ -134,6 +180,13 @@ void ui_screen_pad_build(lv_obj_t *parent)
     lv_obj_set_width(out, LV_PCT(100));
     lv_label_set_long_mode(out, LV_LABEL_LONG_WRAP);
     lv_label_set_text(out, "Résultats tapis chauffant en attente.");
+
+    lv_obj_t *help = lv_label_create(parent);
+    lv_obj_set_width(help, LV_PCT(100));
+    lv_label_set_long_mode(help, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(help,
+                      "Hypothèses : densité catalogue ≈0,04 W/cm² (tableau fourni), limite matière 0,045-0,065 W/cm² selon support. "
+                      "Tension 12 V <=18 W sinon 24 V. Réduis le ratio chauffé si la densité approche la limite.");
 
     static lv_obj_t *controls[6];
     controls[0] = length_ta;

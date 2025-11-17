@@ -18,6 +18,7 @@ static float coverage_for_env(mist_environment_t env)
 {
     switch (env) {
     case MIST_ENV_TROPICAL:
+        return 0.08f; // m²/buse (busette fine ~0,1 L/h)
         return 0.08f; // m²/buse
     case MIST_ENV_TEMPERATE_HUMID:
         return 0.10f;
@@ -50,6 +51,9 @@ bool misting_calculate(const misting_input_t *in, misting_result_t *out)
     const float daily_volume_l = daily_volume_ml / 1000.0f;
     r.daily_consumption_l = daily_volume_l;
     r.tank_volume_l = daily_volume_l * (float)in->autonomy_days * 1.2f; // +20% marge
+    r.tank_volume_autonomy3_l = daily_volume_l * 3.0f * 1.2f;
+    r.tank_volume_autonomy7_l = daily_volume_l * 7.0f * 1.2f;
+    r.warning_dense_spray = (r.nozzle_count / fmaxf(area_m2, 0.1f)) > 10.0f; // >10 buses/m² : risque saturation
     r.valid = r.nozzle_count > 0;
 
     *out = r;
@@ -69,6 +73,12 @@ void misting_run_self_test(void)
     };
     misting_result_t out = {0};
     if (misting_calculate(&in, &out)) {
+        printf("[TEST brumisation] buses=%u, conso=%.2f L/j, cuve %.2f L (3j=%.2f L, 7j=%.2f L)\n",
+               out.nozzle_count,
+               out.daily_consumption_l,
+               out.tank_volume_l,
+               out.tank_volume_autonomy3_l,
+               out.tank_volume_autonomy7_l);
         printf("[TEST brumisation] buses=%u, conso=%.2f L/j, cuve=%.2f L\n",
                out.nozzle_count,
                out.daily_consumption_l,
