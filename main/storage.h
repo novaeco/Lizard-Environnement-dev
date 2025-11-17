@@ -12,6 +12,7 @@ extern "C" {
 #endif
 
 esp_err_t storage_init(void);
+esp_err_t storage_reset_nvs(void);
 
 esp_err_t storage_load_heating_pad(heating_pad_input_t *in);
 esp_err_t storage_save_heating_pad(const heating_pad_input_t *in);

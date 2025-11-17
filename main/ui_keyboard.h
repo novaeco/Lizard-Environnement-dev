@@ -12,8 +12,15 @@ typedef enum {
     UI_KEYBOARD_MODE_DECIMAL,
 } ui_keyboard_mode_t;
 
+typedef enum {
+    UI_KEYBOARD_LAYOUT_FR_AZERTY = 0,
+    UI_KEYBOARD_LAYOUT_EN_QWERTY,
+} ui_keyboard_layout_t;
+
 void ui_keyboard_create(lv_obj_t *parent);
 void ui_keyboard_set_default_mode(ui_keyboard_mode_t mode);
+void ui_keyboard_set_layout(ui_keyboard_layout_t layout);
+ui_keyboard_layout_t ui_keyboard_get_layout(void);
 void ui_keyboard_attach(lv_obj_t *textarea, ui_keyboard_mode_t mode);
 void ui_keyboard_attach_text(lv_obj_t *textarea);
 void ui_keyboard_attach_numeric(lv_obj_t *textarea, bool allow_decimal);

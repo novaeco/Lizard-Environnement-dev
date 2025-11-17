@@ -1,5 +1,12 @@
 #include "ui_screens_about.h"
 
+#include <stdio.h>
+
+#include "esp_err.h"
+
+#include "storage.h"
+#include "ui_keyboard.h"
+
 #define COLOR_TEXT lv_color_hex(0xE2E8F0)
 #define COLOR_MUTED lv_color_hex(0x94A3B8)
 #define COLOR_SURFACE lv_color_hex(0x111827)
@@ -31,6 +38,33 @@ static lv_obj_t *create_panel(lv_obj_t *parent, const char *title, const char *b
     return panel;
 }
 
+static lv_obj_t *s_reset_status_label;
+
+static void reset_nvs_event_cb(lv_event_t *e)
+{
+    (void)e;
+    esp_err_t err = storage_reset_nvs();
+    if (err == ESP_OK) {
+        lv_label_set_text(s_reset_status_label,
+                          "NVS effacée. Les valeurs par défaut seront rechargées au prochain accès.");
+        lv_obj_set_style_text_color(s_reset_status_label, COLOR_TEXT, LV_PART_MAIN);
+    } else {
+        static char msg[96];
+        snprintf(msg, sizeof(msg), "Echec reset NVS : %s", esp_err_to_name(err));
+        lv_label_set_text(s_reset_status_label, msg);
+        lv_obj_set_style_text_color(s_reset_status_label, lv_palette_main(LV_PALETTE_RED), LV_PART_MAIN);
+    }
+}
+
+static void layout_selector_event_cb(lv_event_t *e)
+{
+    lv_obj_t *dd = lv_event_get_target(e);
+    uint16_t sel = lv_dropdown_get_selected(dd);
+
+    ui_keyboard_layout_t layout = (sel == 1) ? UI_KEYBOARD_LAYOUT_EN_QWERTY : UI_KEYBOARD_LAYOUT_FR_AZERTY;
+    ui_keyboard_set_layout(layout);
+}
+
 void ui_screen_about_build(lv_obj_t *parent)
 {
     lv_obj_set_style_pad_all(parent, 16, LV_PART_MAIN);
@@ -60,5 +94,51 @@ void ui_screen_about_build(lv_obj_t *parent)
                  " buses 60-120 mL/min. Les résultats restent indicatifs : valider avec les fiches fabricants, les réglementations"
                  " locales et les besoins biologiques de l'espèce. Installer des protections mécaniques contre les brûlures et"
                  " l'humidité sur les éléments électriques.");
+
+    lv_obj_t *pref_panel = create_panel(parent,
+                                        "Maintenance & préférences",
+                                        "Réinitialise les données NVS en cas de corruption et sélectionne la disposition"
+                                        " clavier pour préparer les prochaines localisations.");
+
+    lv_obj_t *action_row = lv_obj_create(pref_panel);
+    lv_obj_set_width(action_row, LV_PCT(100));
+    lv_obj_set_style_bg_opa(action_row, LV_OPA_0, LV_PART_MAIN);
+    lv_obj_set_style_pad_gap(action_row, 12, LV_PART_MAIN);
+    lv_obj_set_flex_flow(action_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(action_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    lv_obj_t *reset_btn = lv_button_create(action_row);
+    lv_obj_set_width(reset_btn, LV_SIZE_CONTENT);
+    lv_obj_add_event_cb(reset_btn, reset_nvs_event_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *reset_lbl = lv_label_create(reset_btn);
+    lv_label_set_text(reset_lbl, "Réinitialiser NVS");
+    lv_obj_set_style_text_color(reset_lbl, COLOR_TEXT, LV_PART_MAIN);
+
+    s_reset_status_label = lv_label_create(action_row);
+    lv_label_set_text(s_reset_status_label, "NVS intacte");
+    lv_obj_set_style_text_color(s_reset_status_label, COLOR_MUTED, LV_PART_MAIN);
+
+    lv_obj_t *kbd_row = lv_obj_create(pref_panel);
+    lv_obj_set_width(kbd_row, LV_PCT(100));
+    lv_obj_set_style_bg_opa(kbd_row, LV_OPA_0, LV_PART_MAIN);
+    lv_obj_set_style_pad_gap(kbd_row, 12, LV_PART_MAIN);
+    lv_obj_set_flex_flow(kbd_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(kbd_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    lv_obj_t *kbd_lbl = lv_label_create(kbd_row);
+    lv_label_set_text(kbd_lbl, "Disposition clavier");
+    lv_obj_set_style_text_color(kbd_lbl, COLOR_TEXT, LV_PART_MAIN);
+
+    lv_obj_t *dd = lv_dropdown_create(kbd_row);
+    lv_dropdown_set_options(dd, "Français (AZERTY)\nEnglish (QWERTY)");
+    lv_obj_add_event_cb(dd, layout_selector_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_set_width(dd, 240);
+    lv_obj_set_style_text_color(dd, COLOR_TEXT, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(dd, COLOR_SURFACE, LV_PART_MAIN);
+    lv_obj_set_style_border_color(dd, COLOR_ACCENT, LV_PART_MAIN);
+
+    ui_keyboard_layout_t current_layout = ui_keyboard_get_layout();
+    lv_dropdown_set_selected(dd, current_layout == UI_KEYBOARD_LAYOUT_EN_QWERTY ? 1 : 0);
 }
 
