@@ -20,6 +20,7 @@ static float parse_float(const char *txt, float def)
         }
     }
     return strtof(buf, NULL);
+    return strtof(txt, NULL);
 }
 
 static mist_environment_t env_from_dd(lv_obj_t *dd)
@@ -56,6 +57,7 @@ static void create_input_row(lv_obj_t *parent, const char *label, lv_obj_t **ta,
     lv_textarea_set_max_length(*ta, 8);
     lv_obj_set_width(*ta, LV_PCT(100));
     ui_keyboard_attach_numeric(*ta, true);
+    ui_keyboard_attach(*ta);
 }
 
 static void calculate_cb(lv_event_t *e)
@@ -94,6 +96,14 @@ static void calculate_cb(lv_event_t *e)
                  out.warning_dense_spray ? " (attention : buses très proches, risque de saturation)" : "");
         lv_label_set_text(out_label, buf);
         storage_save_misting(&in);
+        char buf[224];
+        snprintf(buf,
+                 sizeof(buf),
+                 "Buses recommandées: %u\nConsommation: %.2f L/jour\nRéservoir (marge 20%%): %.2f L",
+                 out.nozzle_count,
+                 out.daily_consumption_l,
+                 out.tank_volume_l);
+        lv_label_set_text(out_label, buf);
     } else {
         lv_label_set_text(out_label, "Entrées invalides pour la brumisation.");
     }
@@ -130,6 +140,12 @@ void ui_screen_misting_build(lv_obj_t *parent)
     snprintf(tmp, sizeof(tmp), "%u", defaults.cycles_per_day); lv_textarea_set_text(cycle_ta, tmp);
     lv_obj_t *autonomy_ta; create_input_row(inputs, "Autonomie (jours)", &autonomy_ta, "3");
     snprintf(tmp, sizeof(tmp), "%u", defaults.autonomy_days); lv_textarea_set_text(autonomy_ta, tmp);
+    lv_obj_t *length_ta; create_input_row(inputs, "Longueur (cm)", &length_ta, "100");
+    lv_obj_t *depth_ta; create_input_row(inputs, "Profondeur (cm)", &depth_ta, "60");
+    lv_obj_t *flow_ta; create_input_row(inputs, "Débit buse (mL/min)", &flow_ta, "80");
+    lv_obj_t *duration_ta; create_input_row(inputs, "Durée cycle (min)", &duration_ta, "2");
+    lv_obj_t *cycle_ta; create_input_row(inputs, "Cycles / jour", &cycle_ta, "4");
+    lv_obj_t *autonomy_ta; create_input_row(inputs, "Autonomie (jours)", &autonomy_ta, "3");
 
     lv_obj_t *env_cont = lv_obj_create(inputs);
     lv_obj_set_size(env_cont, 220, LV_SIZE_CONTENT);
@@ -143,6 +159,7 @@ void ui_screen_misting_build(lv_obj_t *parent)
     lv_obj_t *env_dd = lv_dropdown_create(env_cont);
     lv_dropdown_set_options(env_dd, "Tropical\nTempéré humide\nSemi-aride\nDésertique");
     lv_dropdown_set_selected(env_dd, defaults.environment);
+    lv_dropdown_set_selected(env_dd, 0);
 
     lv_obj_t *btn = lv_button_create(parent);
     lv_obj_set_width(btn, 180);

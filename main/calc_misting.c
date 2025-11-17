@@ -19,6 +19,7 @@ static float coverage_for_env(mist_environment_t env)
     switch (env) {
     case MIST_ENV_TROPICAL:
         return 0.08f; // m²/buse (busette fine ~0,1 L/h)
+        return 0.08f; // m²/buse
     case MIST_ENV_TEMPERATE_HUMID:
         return 0.10f;
     case MIST_ENV_SEMI_ARID:
@@ -78,6 +79,10 @@ void misting_run_self_test(void)
                out.tank_volume_l,
                out.tank_volume_autonomy3_l,
                out.tank_volume_autonomy7_l);
+        printf("[TEST brumisation] buses=%u, conso=%.2f L/j, cuve=%.2f L\n",
+               out.nozzle_count,
+               out.daily_consumption_l,
+               out.tank_volume_l);
     }
 }
 

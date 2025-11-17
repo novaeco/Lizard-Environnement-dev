@@ -29,6 +29,7 @@ typedef struct {
     bool warning_density_high;
     bool warning_spacing_too_tight;
     bool warning_high_voltage;
+    bool warning_density_high;
 } heating_cable_result_t;
 
 bool heating_cable_calculate(const heating_cable_input_t *in, heating_cable_result_t *out);

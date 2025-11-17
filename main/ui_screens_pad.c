@@ -26,6 +26,7 @@ static float parse_float(const char *txt, float def)
         }
     }
     return strtof(buf, NULL);
+    return strtof(txt, NULL);
 }
 
 static terrarium_material_t material_from_dd(lv_obj_t *dd)
@@ -64,6 +65,7 @@ static void create_input_row(lv_obj_t *parent, const char *label, lv_obj_t **ta,
     lv_textarea_set_max_length(*ta, 8);
     lv_obj_set_width(*ta, LV_PCT(100));
     ui_keyboard_attach_numeric(*ta, true);
+    ui_keyboard_attach(*ta);
 }
 
 static void calculate_cb(lv_event_t *e)
@@ -92,6 +94,7 @@ static void calculate_cb(lv_event_t *e)
                  "Puissance catalogue: %.1f W (densité %.3f W/cm²)\n"
                  "Tension %.0f V, I=%.2f A, R=%.1f Ω\n"
                  "Limite matière: %.3f W/cm²\n%s%s",
+                 "Tension %.0f V, I=%.2f A, R=%.1f Ω\n%s",
                  out.heated_area_cm2,
                  out.heater_side_cm,
                  out.power_w,
@@ -106,6 +109,8 @@ static void calculate_cb(lv_event_t *e)
                      : "Densité dans la plage sécurisée.");
         lv_label_set_text(out_label, buf);
         storage_save_heating_pad(&in);
+                 out.warning_density_high ? "Alerte : densité proche de la limite matière." : "Densité dans la plage sécurisée.");
+        lv_label_set_text(out_label, buf);
     } else {
         lv_label_set_text(out_label, "Entrées invalides pour le calcul de tapis chauffant.");
     }
@@ -142,6 +147,10 @@ void ui_screen_pad_build(lv_obj_t *parent)
     lv_obj_t *ratio_ta; create_input_row(inputs, "Ratio surface chauffée (0.2-0.6)", &ratio_ta, "0.33");
     snprintf(tmp, sizeof(tmp), "%.2f", defaults.heated_ratio);
     lv_textarea_set_text(ratio_ta, tmp);
+    lv_obj_t *length_ta; create_input_row(inputs, "Longueur (cm)", &length_ta, "100");
+    lv_obj_t *depth_ta; create_input_row(inputs, "Profondeur (cm)", &depth_ta, "60");
+    lv_obj_t *height_ta; create_input_row(inputs, "Hauteur (cm)", &height_ta, "60");
+    lv_obj_t *ratio_ta; create_input_row(inputs, "Ratio surface chauffée (0.2-0.6)", &ratio_ta, "0.33");
 
     lv_obj_t *mat_cont = lv_obj_create(inputs);
     lv_obj_set_size(mat_cont, 220, LV_SIZE_CONTENT);
@@ -159,6 +168,7 @@ void ui_screen_pad_build(lv_obj_t *parent)
                                                  : defaults.material == TERRARIUM_MATERIAL_GLASS
                                                        ? 1
                                                        : defaults.material == TERRARIUM_MATERIAL_PVC ? 2 : 3);
+    lv_dropdown_set_selected(material_dd, 1);
 
     lv_obj_t *btn = lv_button_create(parent);
     lv_obj_set_width(btn, 180);

@@ -20,6 +20,7 @@ static float parse_float(const char *txt, float def)
         }
     }
     return strtof(buf, NULL);
+    return strtof(txt, NULL);
 }
 
 static terrarium_environment_t env_from_dd(lv_obj_t *dd)
@@ -56,6 +57,7 @@ static void create_input_row(lv_obj_t *parent, const char *label, lv_obj_t **ta,
     lv_textarea_set_max_length(*ta, 8);
     lv_obj_set_width(*ta, LV_PCT(100));
     ui_keyboard_attach_numeric(*ta, true);
+    ui_keyboard_attach(*ta);
 }
 
 static void calculate_cb(lv_event_t *e)
@@ -92,6 +94,12 @@ static void calculate_cb(lv_event_t *e)
                  "Cible %.0f lux : %u LED (%.0f lm, %.1f W) sur %.2f m².\n"
                  "UVB zone Ferguson %.1f-%.1f : %u module(s) à %.0f cm, UVI estimé %.2f (total %.2f)%s%s.\n"
                  "UVA cible %.1f mW/cm² : %u module(s) à %.0f cm, estimé %.2f%s%s.",
+        char buf[320];
+        snprintf(buf,
+                 sizeof(buf),
+                 "Cible %.0f lux : %u LED (%.0f lm, %.1f W).\n"
+                 "UVB cible UVI %.1f : %u module(s) à %.0f cm%s.\n"
+                 "UVA cible %.1f mW/cm² : %u module(s) à %.0f cm%s.",
                  out.led.target_lux,
                  out.led.led_count,
                  out.led.total_flux_lm,
@@ -113,6 +121,15 @@ static void calculate_cb(lv_event_t *e)
                  out.uva.warning_low ? " (trop bas)" : "");
         lv_label_set_text(out_label, buf);
         storage_save_lighting(&in);
+                 out.uvb.target_uvi,
+                 out.uvb.module_count,
+                 out.uvb.recommended_distance_cm,
+                 out.uvb.warning_high ? " (alerte UVI)" : "",
+                 out.uva.target_uvi,
+                 out.uva.module_count,
+                 out.uva.recommended_distance_cm,
+                 out.uva.warning_high ? " (alerte UVA)" : "");
+        lv_label_set_text(out_label, buf);
     } else {
         lv_label_set_text(out_label, "Entrées invalides pour l'éclairage.");
     }
@@ -153,6 +170,14 @@ void ui_screen_lighting_build(lv_obj_t *parent)
     snprintf(tmp, sizeof(tmp), "%.2f", defaults.uvb_uvi_at_distance); lv_textarea_set_text(uvb_ta, tmp);
     lv_obj_t *dist_ta; create_input_row(inputs, "Distance modules (cm)", &dist_ta, "30");
     snprintf(tmp, sizeof(tmp), "%.0f", defaults.reference_distance_cm); lv_textarea_set_text(dist_ta, tmp);
+    lv_obj_t *length_ta; create_input_row(inputs, "Longueur (cm)", &length_ta, "100");
+    lv_obj_t *depth_ta; create_input_row(inputs, "Profondeur (cm)", &depth_ta, "60");
+    lv_obj_t *height_ta; create_input_row(inputs, "Hauteur (cm)", &height_ta, "60");
+    lv_obj_t *flux_ta; create_input_row(inputs, "Flux par LED (lm)", &flux_ta, "150");
+    lv_obj_t *led_pow_ta; create_input_row(inputs, "Puissance par LED (W)", &led_pow_ta, "1");
+    lv_obj_t *uva_ta; create_input_row(inputs, "UVA module (mW/cm²)", &uva_ta, "3");
+    lv_obj_t *uvb_ta; create_input_row(inputs, "UVB module (UVI)", &uvb_ta, "1.2");
+    lv_obj_t *dist_ta; create_input_row(inputs, "Distance modules (cm)", &dist_ta, "30");
 
     lv_obj_t *env_cont = lv_obj_create(inputs);
     lv_obj_set_size(env_cont, 220, LV_SIZE_CONTENT);
@@ -170,6 +195,7 @@ void ui_screen_lighting_build(lv_obj_t *parent)
                                                  : defaults.environment == TERRARIUM_ENV_DESERTIC
                                                        ? 1
                                                        : defaults.environment == TERRARIUM_ENV_TEMPERATE_FOREST ? 2 : 3);
+    lv_dropdown_set_selected(env_dd, 1);
 
     lv_obj_t *btn = lv_button_create(parent);
     lv_obj_set_width(btn, 180);

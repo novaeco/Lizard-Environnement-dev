@@ -24,6 +24,15 @@ typedef struct {
     bool allow_decimal;
 } kb_binding_t;
 
+static lv_obj_t *s_keyboard;
+static const char *const kb_map[] = {
+    "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "Bksp", "\n",
+    "a", "z", "e", "r", "t", "y", "u", "i", "o", "p", "-", "\n",
+    "q", "s", "d", "f", "g", "h", "j", "k", "l", "m", ",", "\n",
+    "Shift", "w", "x", "c", "v", "b", "n", ";", ":", "?", "Enter", "\n",
+    "123", "Space", "Hide", "", "", "", "", "", "", "", "", ""
+};
+
 static void keyboard_event_cb(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
@@ -60,6 +69,9 @@ static void textarea_event_cb(lv_event_t *e)
                 lv_keyboard_set_map(s_keyboard, text_map, NULL, NULL);
                 lv_textarea_set_accepted_chars(ta, NULL);
             }
+    if (code == LV_EVENT_FOCUSED) {
+        if (s_keyboard) {
+            lv_keyboard_set_textarea(s_keyboard, ta);
             lv_obj_clear_flag(s_keyboard, LV_OBJ_FLAG_HIDDEN);
         }
     } else if (code == LV_EVENT_DEFOCUSED) {
@@ -79,6 +91,8 @@ void ui_keyboard_create(lv_obj_t *parent)
     lv_obj_set_style_max_height(s_keyboard, 220, LV_PART_MAIN);
     lv_obj_align(s_keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_keyboard_set_map(s_keyboard, text_map, NULL, NULL);
+    lv_obj_align(s_keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_keyboard_set_map(s_keyboard, kb_map, NULL, NULL);
     lv_keyboard_set_mode(s_keyboard, LV_KEYBOARD_MODE_TEXT_LOWER);
     lv_obj_add_flag(s_keyboard, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_event_cb(s_keyboard, keyboard_event_cb, LV_EVENT_ALL, NULL);
@@ -106,6 +120,7 @@ void ui_keyboard_attach_text(lv_obj_t *textarea)
 }
 
 void ui_keyboard_attach_numeric(lv_obj_t *textarea, bool allow_decimal)
+void ui_keyboard_attach(lv_obj_t *textarea)
 {
     if (!textarea) {
         return;
@@ -113,5 +128,7 @@ void ui_keyboard_attach_numeric(lv_obj_t *textarea, bool allow_decimal)
     kb_binding_t *binding = alloc_binding(true, allow_decimal);
     lv_obj_add_event_cb(textarea, textarea_event_cb, LV_EVENT_FOCUSED, binding);
     lv_obj_add_event_cb(textarea, textarea_event_cb, LV_EVENT_DEFOCUSED, binding);
+    lv_obj_add_event_cb(textarea, textarea_event_cb, LV_EVENT_FOCUSED, NULL);
+    lv_obj_add_event_cb(textarea, textarea_event_cb, LV_EVENT_DEFOCUSED, NULL);
 }
 

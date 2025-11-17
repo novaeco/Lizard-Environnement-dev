@@ -20,6 +20,7 @@ static float parse_float(const char *txt, float def)
         }
     }
     return strtof(buf, NULL);
+    return strtof(txt, NULL);
 }
 
 static substrate_type_t type_from_dd(lv_obj_t *dd)
@@ -58,6 +59,7 @@ static void create_input_row(lv_obj_t *parent, const char *label, lv_obj_t **ta,
     lv_textarea_set_max_length(*ta, 8);
     lv_obj_set_width(*ta, LV_PCT(100));
     ui_keyboard_attach_numeric(*ta, true);
+    ui_keyboard_attach(*ta);
 }
 
 static void calculate_cb(lv_event_t *e)
@@ -92,6 +94,14 @@ static void calculate_cb(lv_event_t *e)
                  out.mass_kg);
         lv_label_set_text(out_label, buf);
         storage_save_substrate(&in);
+        char buf[192];
+        snprintf(buf,
+                 sizeof(buf),
+                 "Volume: %.1f L\nMasse approximative: %.1f kg (densité %.2f kg/L)",
+                 out.volume_l,
+                 out.mass_kg,
+                 out.density_kg_per_l);
+        lv_label_set_text(out_label, buf);
     } else {
         lv_label_set_text(out_label, "Entrées invalides pour le substrat.");
     }
@@ -124,6 +134,10 @@ void ui_screen_substrate_build(lv_obj_t *parent)
     snprintf(tmp, sizeof(tmp), "%.0f", defaults.height_cm); lv_textarea_set_text(height_ta, tmp);
     lv_obj_t *substrate_ta; create_input_row(inputs, "Hauteur substrat (cm)", &substrate_ta, "8");
     snprintf(tmp, sizeof(tmp), "%.1f", defaults.substrate_height_cm); lv_textarea_set_text(substrate_ta, tmp);
+    lv_obj_t *length_ta; create_input_row(inputs, "Longueur (cm)", &length_ta, "100");
+    lv_obj_t *depth_ta; create_input_row(inputs, "Profondeur (cm)", &depth_ta, "60");
+    lv_obj_t *height_ta; create_input_row(inputs, "Hauteur (cm)", &height_ta, "60");
+    lv_obj_t *substrate_ta; create_input_row(inputs, "Hauteur substrat (cm)", &substrate_ta, "8");
 
     lv_obj_t *type_cont = lv_obj_create(inputs);
     lv_obj_set_size(type_cont, 220, LV_SIZE_CONTENT);
@@ -137,6 +151,7 @@ void ui_screen_substrate_build(lv_obj_t *parent)
     lv_obj_t *type_dd = lv_dropdown_create(type_cont);
     lv_dropdown_set_options(type_dd, "Terreau\nFibre coco\nMélange forestier\nSable\nSable/terre");
     lv_dropdown_set_selected(type_dd, defaults.type);
+    lv_dropdown_set_selected(type_dd, 2);
 
     lv_obj_t *btn = lv_button_create(parent);
     lv_obj_set_width(btn, 180);

@@ -20,6 +20,7 @@ static float parse_float(const char *txt, float def)
         }
     }
     return strtof(buf, NULL);
+    return strtof(txt, NULL);
 }
 
 static terrarium_material_t material_from_dd(lv_obj_t *dd)
@@ -58,6 +59,7 @@ static void create_input_row(lv_obj_t *parent, const char *label, lv_obj_t **ta,
     lv_textarea_set_max_length(*ta, 8);
     lv_obj_set_width(*ta, LV_PCT(100));
     ui_keyboard_attach_numeric(*ta, true);
+    ui_keyboard_attach(*ta);
 }
 
 static void calculate_cb(lv_event_t *e)
@@ -72,6 +74,7 @@ static void calculate_cb(lv_event_t *e)
     lv_obj_t *spacing_ta = controls[6];
     lv_obj_t *supply_ta = controls[7];
     lv_obj_t *out_label = controls[8];
+    lv_obj_t *out_label = controls[6];
 
     heating_cable_input_t in = {
         .length_cm = parse_float(lv_textarea_get_text(length_ta), 100.0f),
@@ -82,6 +85,7 @@ static void calculate_cb(lv_event_t *e)
         .material = material_from_dd(material_dd),
         .spacing_cm = parse_float(lv_textarea_get_text(spacing_ta), 4.0f),
         .supply_voltage_v = parse_float(lv_textarea_get_text(supply_ta), 24.0f),
+        .supply_voltage_v = 24.0f,
     };
 
     heating_cable_result_t out = {0};
@@ -104,6 +108,13 @@ static void calculate_cb(lv_event_t *e)
                  out.warning_high_voltage ? "230 V : usage théorique uniquement, isoler mécaniquement et électriquement." : "");
         lv_label_set_text(out_label, buf);
         storage_save_heating_cable(&in);
+                 "Surface chauffée: %.0f cm²\nLongueur câble: %.2f m\nPuissance cible: %.1f W (%.3f W/cm²)\n%s",
+                 out.heated_area_cm2,
+                 out.recommended_length_m,
+                 out.target_power_w,
+                 out.resulting_density_w_per_cm2,
+                 out.warning_density_high ? "Alerte densité : réduire la puissance ou augmenter la surface." : "Densité ok.");
+        lv_label_set_text(out_label, buf);
     } else {
         lv_label_set_text(out_label, "Entrées invalides pour le calcul de câble chauffant.");
     }
@@ -142,6 +153,11 @@ void ui_screen_cable_build(lv_obj_t *parent)
     snprintf(tmp, sizeof(tmp), "%.1f", defaults.spacing_cm); lv_textarea_set_text(spacing_ta, tmp);
     lv_obj_t *supply_ta; create_input_row(inputs, "Tension câble (V)", &supply_ta, "24");
     snprintf(tmp, sizeof(tmp), "%.0f", defaults.supply_voltage_v); lv_textarea_set_text(supply_ta, tmp);
+    lv_obj_t *length_ta; create_input_row(inputs, "Longueur (cm)", &length_ta, "100");
+    lv_obj_t *depth_ta; create_input_row(inputs, "Profondeur (cm)", &depth_ta, "60");
+    lv_obj_t *ratio_ta; create_input_row(inputs, "Ratio chauffé", &ratio_ta, "0.33");
+    lv_obj_t *density_ta; create_input_row(inputs, "Densité cible (W/cm²)", &density_ta, "0.035");
+    lv_obj_t *power_lin_ta; create_input_row(inputs, "Puissance linéique (W/m)", &power_lin_ta, "20");
 
     lv_obj_t *mat_cont = lv_obj_create(inputs);
     lv_obj_set_size(mat_cont, 220, LV_SIZE_CONTENT);
@@ -159,6 +175,7 @@ void ui_screen_cable_build(lv_obj_t *parent)
                                                  : defaults.material == TERRARIUM_MATERIAL_GLASS
                                                        ? 1
                                                        : defaults.material == TERRARIUM_MATERIAL_PVC ? 2 : 3);
+    lv_dropdown_set_selected(material_dd, 1);
 
     lv_obj_t *btn = lv_button_create(parent);
     lv_obj_set_width(btn, 180);
@@ -179,6 +196,7 @@ void ui_screen_cable_build(lv_obj_t *parent)
                       "Le 230 V est indiqué uniquement pour vérification théorique : préférer 12/24 V SELV.");
 
     static lv_obj_t *controls[9];
+    static lv_obj_t *controls[7];
     controls[0] = length_ta;
     controls[1] = depth_ta;
     controls[2] = ratio_ta;
@@ -188,6 +206,7 @@ void ui_screen_cable_build(lv_obj_t *parent)
     controls[6] = spacing_ta;
     controls[7] = supply_ta;
     controls[8] = out;
+    controls[6] = out;
     lv_obj_add_event_cb(btn, calculate_cb, LV_EVENT_CLICKED, controls);
 }
 

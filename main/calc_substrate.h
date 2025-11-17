@@ -32,6 +32,7 @@ typedef struct {
     float density_kg_per_l;
     float density_min_kg_per_l;
     float density_max_kg_per_l;
+    float density_kg_per_l;
 } substrate_result_t;
 
 bool substrate_calculate(const substrate_input_t *in, substrate_result_t *out);

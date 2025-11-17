@@ -18,5 +18,7 @@ idf_component_register(
         "ui_screens_about.c"
     INCLUDE_DIRS "."
     REQUIRES esp_timer esp_lcd lvgl gt911 nvs_flash
+    INCLUDE_DIRS "."
+    REQUIRES esp_timer esp_lcd lvgl gt911
     PRIV_REQUIRES driver esp_driver_gpio esp_driver_i2c esp_system
 )
