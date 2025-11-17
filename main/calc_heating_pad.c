@@ -194,9 +194,11 @@ static void log_case(float l, float p, float h, float ratio, terrarium_material_
 
 void heating_pad_run_self_test(void)
 {
+    log_case(5, 5, 8, 0.2f, TERRARIUM_MATERIAL_GLASS);          // dimensions quasi-minimales
     log_case(20, 20, 14, 0.33f, TERRARIUM_MATERIAL_GLASS);
     log_case(30, 20, 20, 0.33f, TERRARIUM_MATERIAL_GLASS);
     log_case(40, 30, 30, 0.33f, TERRARIUM_MATERIAL_GLASS);
     log_case(60, 45, 45, 0.33f, TERRARIUM_MATERIAL_GLASS);
+    log_case(80, 50, 70, 0.6f, TERRARIUM_MATERIAL_WOOD);        // volume haut, ratio chauffé max
     log_case(100, 60, 60, 0.33f, TERRARIUM_MATERIAL_GLASS);
 }

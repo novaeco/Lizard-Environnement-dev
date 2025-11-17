@@ -148,9 +148,29 @@ bool lighting_calculate(const lighting_input_t *in, lighting_result_t *out)
     return true;
 }
 
+static void log_case(const lighting_input_t *in, const char *label)
+{
+    lighting_result_t out = {0};
+    if (lighting_calculate(in, &out)) {
+        printf("[TEST éclairage:%s] LED=%u (%.0f lm, %.0f lux cible), UVB=%u @%.0f cm (%.2f-%.2f UVI, est=%.2f), UVA=%u @%.0f cm (est=%.2f)\n",
+               label,
+               out.led.led_count,
+               out.led.total_flux_lm,
+               out.led.target_lux,
+               out.uvb.module_count,
+               out.uvb.recommended_distance_cm,
+               out.uvb.target_uvi_min,
+               out.uvb.target_uvi_max,
+               out.uvb.estimated_total_uvi,
+               out.uva.module_count,
+               out.uva.recommended_distance_cm,
+               out.uva.estimated_total_uvi);
+    }
+}
+
 void lighting_run_self_test(void)
 {
-    lighting_input_t in = {
+    const lighting_input_t nominal = {
         .length_cm = 100,
         .depth_cm = 60,
         .height_cm = 60,
@@ -161,15 +181,30 @@ void lighting_run_self_test(void)
         .uvb_uvi_at_distance = 1.2f,
         .reference_distance_cm = 30.0f,
     };
-    lighting_result_t out = {0};
-    if (lighting_calculate(&in, &out)) {
-        printf("[TEST éclairage] LED=%u (%.0f lm, %.0f lux cible), UVB=%u (%.2f-%.2f UVI), UVA=%u\n",
-               out.led.led_count,
-               out.led.total_flux_lm,
-               out.led.target_lux,
-               out.uvb.module_count,
-               out.uvb.target_uvi_min,
-               out.uvb.target_uvi_max,
-               out.uva.module_count);
-    }
+    const lighting_input_t uv_close = {
+        .length_cm = 80,
+        .depth_cm = 40,
+        .height_cm = 40,
+        .environment = TERRARIUM_ENV_TROPICAL,
+        .led_luminous_flux_lm = 110.0f,
+        .led_power_w = 0.8f,
+        .uva_irradiance_mw_cm2_at_distance = 5.0f,
+        .uvb_uvi_at_distance = 3.5f,
+        .reference_distance_cm = 10.0f, // distance de référence très proche
+    };
+    const lighting_input_t uv_far = {
+        .length_cm = 150,
+        .depth_cm = 80,
+        .height_cm = 120,
+        .environment = TERRARIUM_ENV_TEMPERATE,
+        .led_luminous_flux_lm = 160.0f,
+        .led_power_w = 1.2f,
+        .uva_irradiance_mw_cm2_at_distance = 1.2f,
+        .uvb_uvi_at_distance = 0.6f,
+        .reference_distance_cm = 60.0f, // distance de référence très éloignée
+    };
+
+    log_case(&nominal, "nominal");
+    log_case(&uv_close, "UV proche");
+    log_case(&uv_far, "UV distant");
 }

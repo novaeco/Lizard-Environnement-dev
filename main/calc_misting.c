@@ -64,7 +64,7 @@ bool misting_calculate(const misting_input_t *in, misting_result_t *out)
 
 void misting_run_self_test(void)
 {
-    misting_input_t in = {
+    const misting_input_t nominal = {
         .length_cm = 120,
         .depth_cm = 60,
         .environment = MIST_ENV_TROPICAL,
@@ -73,13 +73,38 @@ void misting_run_self_test(void)
         .cycles_per_day = 4,
         .autonomy_days = 3,
     };
-    misting_result_t out = {0};
-    if (misting_calculate(&in, &out)) {
-        printf("[TEST brumisation] buses=%u, conso=%.2f L/j, cuve %.2f L (3j=%.2f L, 7j=%.2f L)\n",
-               out.nozzle_count,
-               out.daily_consumption_l,
-               out.tank_volume_l,
-               out.tank_volume_autonomy3_l,
-               out.tank_volume_autonomy7_l);
+    const misting_input_t dense = {
+        .length_cm = 300,
+        .depth_cm = 200,
+        .environment = MIST_ENV_TROPICAL,
+        .nozzle_flow_ml_per_min = 120.0f,
+        .cycle_duration_min = 3.0f,
+        .cycles_per_day = 6,
+        .autonomy_days = 7,
+    };
+    const misting_input_t minimal = {
+        .length_cm = 20,
+        .depth_cm = 20,
+        .environment = MIST_ENV_SEMI_ARID,
+        .nozzle_flow_ml_per_min = 60.0f,
+        .cycle_duration_min = 0.5f,
+        .cycles_per_day = 1,
+        .autonomy_days = 1,
+    };
+    const misting_input_t cases[] = {nominal, dense, minimal};
+
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        misting_result_t out = {0};
+        if (misting_calculate(&cases[i], &out)) {
+            printf("[TEST brumisation %zu] buses=%u, conso=%.2f L/j, cuve %.2f L (3j=%.2f L, 7j=%.2f L)%s%s\n",
+                   i,
+                   out.nozzle_count,
+                   out.daily_consumption_l,
+                   out.tank_volume_l,
+                   out.tank_volume_autonomy3_l,
+                   out.tank_volume_autonomy7_l,
+                   out.warning_dense_spray ? " couverture dense" : "",
+                   out.warning_sparse_spray ? " couverture faible" : "");
+        }
     }
 }

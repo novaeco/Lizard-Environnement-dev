@@ -52,14 +52,23 @@ bool substrate_calculate(const substrate_input_t *in, substrate_result_t *out)
 
 void substrate_run_self_test(void)
 {
-    substrate_input_t in = {.length_cm = 100, .depth_cm = 60, .height_cm = 60, .substrate_height_cm = 8, .type = SUBSTRATE_FOREST_BLEND};
-    substrate_result_t out = {0};
-    if (substrate_calculate(&in, &out)) {
-        printf("[TEST substrat] %.1f L, %.1f-%.1f kg (densité %.2f-%.2f kg/L)\n",
-               out.volume_l,
-               out.mass_min_kg,
-               out.mass_max_kg,
-               out.density_min_kg_per_l,
-               out.density_max_kg_per_l);
+    const substrate_input_t nominal = {.length_cm = 100, .depth_cm = 60, .height_cm = 60, .substrate_height_cm = 8, .type = SUBSTRATE_FOREST_BLEND};
+    const substrate_input_t minimal = {.length_cm = 20, .depth_cm = 20, .height_cm = 25, .substrate_height_cm = 2, .type = SUBSTRATE_COCO};
+    const substrate_input_t heavy = {.length_cm = 150, .depth_cm = 70, .height_cm = 70, .substrate_height_cm = 12, .type = SUBSTRATE_SAND};
+    const substrate_input_t cases[] = {nominal, minimal, heavy};
+
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        substrate_result_t out = {0};
+        if (substrate_calculate(&cases[i], &out)) {
+            printf("[TEST substrat %zu] %.1f L, %.1f-%.1f kg (densité %.2f-%.2f kg/L)%s%s\n",
+                   i,
+                   out.volume_l,
+                   out.mass_min_kg,
+                   out.mass_max_kg,
+                   out.density_min_kg_per_l,
+                   out.density_max_kg_per_l,
+                   out.warning_dimensions_small ? " dimensions limites" : "",
+                   out.warning_height_low ? " hauteur faible" : "");
+        }
     }
 }
