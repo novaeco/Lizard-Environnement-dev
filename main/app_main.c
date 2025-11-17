@@ -9,11 +9,11 @@
 #include "esp_check.h"
 #include "esp_err.h"
 #include "esp_heap_caps.h"
-#include "esp_lcd_panel_rgb.h"
 #include "esp_lcd_panel_ops.h"
+#include "esp_lcd_panel_rgb.h"
 #include "esp_log.h"
-#include "esp_timer.h"
 #include "esp_task_wdt.h"
+#include "esp_timer.h"
 #include "soc/soc_caps.h"
 #if SOC_PSRAM_SUPPORTED
 #include "esp_psram.h"
@@ -21,8 +21,14 @@
 #include "lvgl.h"
 
 #include "board_waveshare_7b.h"
-#include "calc.h"
+#include "calc_heating_cable.h"
+#include "calc_heating_pad.h"
+#include "calc_lighting.h"
+#include "calc_misting.h"
+#include "calc_substrate.h"
 #include "gt911/gt911.h"
+#include "storage.h"
+#include "ui_main.h"
 
 __attribute__((weak)) void board_ch422g_enable(void) {}
 
@@ -46,6 +52,7 @@ typedef struct {
 
 static lvgl_buffers_t s_lvgl_buffers;
 
+static bool query_psram_once(void);
 static esp_err_t init_touch(void);
 static void deinit_touch(void);
 static esp_err_t start_lvgl_task(void);
@@ -55,31 +62,26 @@ static void enter_safe_fault_state(const char *stage, esp_err_t err)
 {
     if (stage) {
         if (err == ESP_OK) {
-            ESP_LOGE(TAG, "Arret dans l'etat %s sans code d'erreur explicite", stage);
+            ESP_LOGE(TAG, "Arrêt dans l'état %s sans code d'erreur explicite", stage);
         } else {
-            ESP_LOGE(TAG,
-                     "Echec critique pendant %s: %s (0x%x)",
-                     stage,
-                     esp_err_to_name(err),
-                     (unsigned)err);
+            ESP_LOGE(TAG, "Echec critique pendant %s: %s (0x%x)", stage, esp_err_to_name(err), (unsigned)err);
         }
     }
 #if SOC_PSRAM_SUPPORTED
     if (!query_psram_once()) {
         ESP_LOGW(TAG,
-                 "PSRAM indisponible. Verifiez le cablage / l'activation BIOS et recompiliez sans "
-                 "CONFIG_SPIRAM si votre carte n'en possede pas.");
+                 "PSRAM indisponible. Vérifiez le câblage / l'activation et recompiliez sans CONFIG_SPIRAM si la carte n'en possède pas.");
     }
 #endif
 #if CONFIG_ESP_TASK_WDT_INIT
     esp_err_t wdt_err = esp_task_wdt_deinit();
     if (wdt_err != ESP_OK && wdt_err != ESP_ERR_INVALID_STATE) {
-        ESP_LOGW(TAG, "Impossible de desactiver le Task WDT: %s", esp_err_to_name(wdt_err));
+        ESP_LOGW(TAG, "Impossible de désactiver le Task WDT: %s", esp_err_to_name(wdt_err));
     } else {
-        ESP_LOGI(TAG, "Task WDT desactive pour conserver la console serie stable");
+        ESP_LOGI(TAG, "Task WDT désactivé pour conserver la console série stable");
     }
 #endif
-    ESP_LOGE(TAG, "Systeme en pause. Corrigez la cause puis redemarrez l'ESP32-S3.");
+    ESP_LOGE(TAG, "Système en pause. Corrige la cause puis redémarre l'ESP32-S3.");
     while (true) {
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
@@ -127,26 +129,6 @@ static bool query_psram_once(void)
     return false;
 }
 #endif
-
-typedef struct {
-    lv_obj_t *length_cm;
-    lv_obj_t *width_cm;
-    lv_obj_t *height_cm;
-    lv_obj_t *material_dd;
-    lv_obj_t *substrate_cm;
-    lv_obj_t *lux_target;
-    lv_obj_t *led_efficiency;
-    lv_obj_t *led_power;
-    lv_obj_t *uv_target;
-    lv_obj_t *uv_module;
-    lv_obj_t *mist_density;
-    lv_obj_t *status_label;
-    lv_obj_t *heater_label;
-    lv_obj_t *lighting_label;
-    lv_obj_t *uv_label;
-    lv_obj_t *substrate_label;
-    lv_obj_t *misting_label;
-} terrarium_ui_ctx_t;
 
 static bool rgb_panel_color_trans_cb(esp_lcd_panel_handle_t panel, const esp_lcd_rgb_panel_event_data_t *edata, void *user_data)
 {
@@ -306,17 +288,11 @@ static esp_err_t init_display(void)
     panel_config.flags.fb_in_psram = has_psram;
 
     if (!has_psram) {
-        ESP_LOGE(TAG,
-                 "PSRAM non initialisée : impossible d'allouer le framebuffer %ux%u RGB16",
-                 BOARD_LCD_H_RES,
-                 BOARD_LCD_V_RES);
+        ESP_LOGE(TAG, "PSRAM non initialisée : impossible d'allouer le framebuffer %ux%u RGB16", BOARD_LCD_H_RES, BOARD_LCD_V_RES);
         return ESP_ERR_NO_MEM;
     }
 
-    ESP_LOGI(TAG,
-             "Initialising RGB panel with framebuffer in PSRAM (%ux%u RGB16)",
-             BOARD_LCD_H_RES,
-             BOARD_LCD_V_RES);
+    ESP_LOGI(TAG, "Initialising RGB panel with framebuffer in PSRAM (%ux%u RGB16)", BOARD_LCD_H_RES, BOARD_LCD_V_RES);
 
     esp_err_t err = esp_lcd_new_rgb_panel(&panel_config, &s_panel_handle);
     if (err != ESP_OK) {
@@ -394,10 +370,7 @@ static esp_err_t init_lvgl(void)
         return ESP_ERR_NO_MEM;
     }
 
-    ESP_LOGI(TAG,
-             "LVGL draw buffers: %zu bytes each allocated in %s",
-             buffer_bytes,
-             buffers_in_psram ? "PSRAM" : "internal SRAM");
+    ESP_LOGI(TAG, "LVGL draw buffers: %zu bytes each allocated in %s", buffer_bytes, buffers_in_psram ? "PSRAM" : "internal SRAM");
 
     s_display = lv_display_create(BOARD_LCD_H_RES, BOARD_LCD_V_RES);
     lv_display_set_color_format(s_display, LV_COLOR_FORMAT_RGB565);
@@ -524,291 +497,23 @@ static void deinit_touch(void)
     }
 }
 
-static float get_textarea_float(lv_obj_t *ta)
+static void run_self_tests(void)
 {
-    const char *txt = lv_textarea_get_text(ta);
-    if (!txt) {
-        return 0.0f;
-    }
-    char buffer[32];
-    size_t len = strlen(txt);
-    if (len >= sizeof(buffer)) {
-        len = sizeof(buffer) - 1;
-    }
-    memcpy(buffer, txt, len);
-    buffer[len] = '\0';
-    for (size_t i = 0; i < len; ++i) {
-        if (buffer[i] == ',') {
-            buffer[i] = '.';
-        } else if (buffer[i] == ' ') {
-            memmove(&buffer[i], &buffer[i + 1], len - i);
-            --len;
-            --i;
-        }
-    }
-    return strtof(buffer, NULL);
-}
-
-static terrarium_material_t get_material_from_dropdown(lv_obj_t *dd)
-{
-    uint16_t sel = lv_dropdown_get_selected(dd);
-    switch (sel) {
-    case 0:
-        return TERRARIUM_MATERIAL_WOOD;
-    case 1:
-        return TERRARIUM_MATERIAL_GLASS;
-    case 2:
-        return TERRARIUM_MATERIAL_PVC;
-    case 3:
-        return TERRARIUM_MATERIAL_ACRYLIC;
-    default:
-        return TERRARIUM_MATERIAL_GLASS;
-    }
-}
-
-static void update_results(terrarium_ui_ctx_t *ctx, const terrarium_calc_result_t *res)
-{
-    if (res->heating.valid) {
-        lv_label_set_text_fmt(
-            ctx->heater_label,
-            "Surface sol : %.0f cm^2 (%.2f m^2)\n"
-            "Volume utile : %.1f L\n"
-            "Tapis vise : %.0f cm^2 (cote %.1f cm)\n"
-            "Puissance brute : %.2f W\n"
-            "Catalogue : %.1f W @ %.0f V (I=%.2f A, R=%.1f Ohm)",
-            res->heating.floor_area_cm2,
-            res->heating.floor_area_m2,
-            res->heating.enclosure_volume_l,
-            res->heating.heater_target_area_cm2,
-            res->heating.heater_side_cm,
-            res->heating.heater_power_raw_w,
-            res->heating.heater_power_catalog_w,
-            res->heating.heater_voltage_v,
-            res->heating.heater_current_a,
-            res->heating.heater_resistance_ohm);
-    } else {
-        lv_label_set_text(ctx->heater_label, "Tapis chauffant : entrees invalides.");
-    }
-
-    if (res->lighting.valid) {
-        const float led_total_power = res->lighting.led_count * res->lighting.power_per_led_w;
-        lv_label_set_text_fmt(
-            ctx->lighting_label,
-            "Flux lumineux : %.0f lm\n"
-            "Puissance LED : %.1f W\n"
-            "Modules requis : %u (%.1f W/unite, %.1f W total)",
-            res->lighting.luminous_flux_lm,
-            res->lighting.power_w,
-            (unsigned)res->lighting.led_count,
-            res->lighting.power_per_led_w,
-            led_total_power);
-    } else {
-        lv_label_set_text(ctx->lighting_label, "Eclairage LED : renseignez lux, efficacite et puissance par module.");
-    }
-
-    if (res->uv.valid) {
-        lv_label_set_text_fmt(
-            ctx->uv_label,
-            "Modules UVA/UVB requis : %u",
-            (unsigned)res->uv.module_count);
-    } else {
-        lv_label_set_text(ctx->uv_label, "Modules UV : valeurs manquantes.");
-    }
-
-    if (res->substrate.valid) {
-        lv_label_set_text_fmt(
-            ctx->substrate_label,
-            "Volume de substrat : %.2f L",
-            res->substrate.volume_l);
-    } else {
-        lv_label_set_text(ctx->substrate_label, "Substrat : epaisseur nulle ou non specifiee.");
-    }
-
-    if (res->misting.valid) {
-        lv_label_set_text_fmt(
-            ctx->misting_label,
-            "Buses de brumisation : %u",
-            (unsigned)res->misting.nozzle_count);
-    } else {
-        lv_label_set_text(ctx->misting_label, "Brumisation : densite non valide.");
-    }
-
-    const bool clamped = (res->status_flags & TERRARIUM_CALC_STATUS_INPUT_CLAMPED) != 0;
-    const bool invalid = (res->status_flags & TERRARIUM_CALC_STATUS_INPUT_INVALID) != 0;
-    lv_label_set_text_fmt(
-        ctx->status_label,
-        "Calcul realise %s%s",
-        invalid ? "avec avertissements" : "OK",
-        clamped ? " (entrees normalisees)" : "");
-}
-
-static void calculate_event_cb(lv_event_t *e)
-{
-    terrarium_ui_ctx_t *ctx = (terrarium_ui_ctx_t *)lv_event_get_user_data(e);
-    terrarium_calc_input_t input = {
-        .length_cm = get_textarea_float(ctx->length_cm),
-        .width_cm = get_textarea_float(ctx->width_cm),
-        .height_cm = get_textarea_float(ctx->height_cm),
-        .substrate_thickness_cm = get_textarea_float(ctx->substrate_cm),
-        .material = get_material_from_dropdown(ctx->material_dd),
-        .target_lux = get_textarea_float(ctx->lux_target),
-        .led_efficiency_lm_per_w = get_textarea_float(ctx->led_efficiency),
-        .led_power_per_unit_w = get_textarea_float(ctx->led_power),
-        .uv_target_intensity = get_textarea_float(ctx->uv_target),
-        .uv_module_intensity = get_textarea_float(ctx->uv_module),
-        .mist_density_m2_per_nozzle = get_textarea_float(ctx->mist_density),
-    };
-
-    terrarium_calc_result_t result = {0};
-    if (terrarium_calc_compute(&input, &result)) {
-        update_results(ctx, &result);
-    } else {
-        lv_label_set_text(ctx->status_label, "Entrees invalides - verifiez les champs.");
-    }
-}
-
-static lv_obj_t *create_labeled_textarea(lv_obj_t *parent, const char *title, const char *placeholder, const char *default_value)
-{
-    lv_obj_t *cont = lv_obj_create(parent);
-    lv_obj_set_size(cont, 300, LV_SIZE_CONTENT);
-    lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_gap(cont, 8, LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(cont, LV_OPA_0, LV_PART_MAIN);
-    lv_obj_remove_flag(cont, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t *label = lv_label_create(cont);
-    lv_label_set_text(label, title);
-
-    lv_obj_t *ta = lv_textarea_create(cont);
-    lv_textarea_set_one_line(ta, true);
-    lv_textarea_set_placeholder_text(ta, placeholder);
-    lv_textarea_set_max_length(ta, 32);
-    lv_textarea_set_accepted_chars(ta, "0123456789.,-+eE");
-    lv_obj_set_width(ta, LV_PCT(100));
-    if (default_value) {
-        lv_textarea_set_text(ta, default_value);
-    }
-    return ta;
-}
-
-static lv_obj_t *create_labeled_dropdown(lv_obj_t *parent, const char *title, const char *options, uint16_t default_sel)
-{
-    lv_obj_t *cont = lv_obj_create(parent);
-    lv_obj_set_size(cont, 300, LV_SIZE_CONTENT);
-    lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_gap(cont, 8, LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(cont, LV_OPA_0, LV_PART_MAIN);
-    lv_obj_remove_flag(cont, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t *label = lv_label_create(cont);
-    lv_label_set_text(label, title);
-
-    lv_obj_t *dd = lv_dropdown_create(cont);
-    lv_dropdown_set_options(dd, options);
-    lv_dropdown_set_selected(dd, default_sel);
-    lv_obj_set_width(dd, LV_PCT(100));
-    return dd;
-}
-
-static void build_ui(terrarium_ui_ctx_t *ctx)
-{
-    lv_obj_t *root = lv_obj_create(lv_screen_active());
-    lv_obj_set_size(root, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_flex_flow(root, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(root, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-    lv_obj_set_style_pad_all(root, 20, LV_PART_MAIN);
-    lv_obj_set_style_pad_gap(root, 16, LV_PART_MAIN);
-    lv_obj_set_scroll_dir(root, LV_DIR_VER);
-
-    lv_obj_t *title = lv_label_create(root);
-    lv_label_set_text(title, "TerrariumCalc - ESP32-S3 (Waveshare Touch LCD 7B)");
-
-    lv_obj_t *subtitle = lv_label_create(root);
-    lv_label_set_text(subtitle, "Calculez les equipements recommandes a partir des dimensions et contraintes lumineuses.");
-
-    lv_obj_t *inputs_panel = lv_obj_create(root);
-    lv_obj_set_size(inputs_panel, LV_PCT(100), LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_all(inputs_panel, 16, LV_PART_MAIN);
-    lv_obj_set_style_pad_gap(inputs_panel, 16, LV_PART_MAIN);
-    lv_obj_set_style_radius(inputs_panel, 12, LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(inputs_panel, LV_OPA_20, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(inputs_panel, lv_palette_main(LV_PALETTE_BLUE_GREY), LV_PART_MAIN);
-    lv_obj_set_flex_flow(inputs_panel, LV_FLEX_FLOW_ROW_WRAP);
-    lv_obj_set_flex_align(inputs_panel, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-
-    ctx->length_cm = create_labeled_textarea(inputs_panel, "Longueur (cm)", "Ex: 120", "120");
-    ctx->width_cm = create_labeled_textarea(inputs_panel, "Largeur (cm)", "Ex: 60", "60");
-    ctx->height_cm = create_labeled_textarea(inputs_panel, "Hauteur (cm)", "Ex: 60", "60");
-    ctx->substrate_cm = create_labeled_textarea(inputs_panel, "Epaisseur substrat (cm)", "Ex: 8", "8");
-    ctx->lux_target = create_labeled_textarea(inputs_panel, "Cible d'eclairement (lux)", "Ex: 12000", "12000");
-    ctx->led_efficiency = create_labeled_textarea(inputs_panel, "Efficacite LED (lm/W)", "Ex: 160", "160");
-    ctx->led_power = create_labeled_textarea(inputs_panel, "Puissance par LED (W)", "Ex: 5", "5");
-    ctx->uv_target = create_labeled_textarea(inputs_panel, "Intensite UV cible", "Ex: 150", "150");
-    ctx->uv_module = create_labeled_textarea(inputs_panel, "Intensite par module UV", "Ex: 75", "75");
-    ctx->mist_density = create_labeled_textarea(inputs_panel, "Densite brumisation (m^2/buse)", "Ex: 0.10", "0.10");
-    ctx->material_dd = create_labeled_dropdown(inputs_panel, "Materiau du plancher", "Bois\nVerre\nPVC\nAcrylique", 1);
-
-    lv_obj_t *button = lv_button_create(root);
-    lv_obj_set_height(button, LV_SIZE_CONTENT);
-    lv_obj_set_width(button, 240);
-    lv_obj_set_style_pad_all(button, 12, LV_PART_MAIN);
-    lv_obj_set_style_radius(button, 12, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(button, lv_palette_main(LV_PALETTE_GREEN), LV_PART_MAIN);
-    lv_obj_center(button);
-
-    lv_obj_t *btn_label = lv_label_create(button);
-    lv_label_set_text(btn_label, "Calculer");
-    lv_obj_center(btn_label);
-
-    lv_obj_t *status = lv_label_create(root);
-    lv_label_set_text(status, "Saisissez les parametres puis appuyez sur Calculer.");
-    ctx->status_label = status;
-
-    lv_obj_t *results_panel = lv_obj_create(root);
-    lv_obj_set_size(results_panel, LV_PCT(100), LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_all(results_panel, 16, LV_PART_MAIN);
-    lv_obj_set_style_pad_gap(results_panel, 12, LV_PART_MAIN);
-    lv_obj_set_style_radius(results_panel, 12, LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(results_panel, LV_OPA_10, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(results_panel, lv_palette_lighten(LV_PALETTE_GREY, 1), LV_PART_MAIN);
-    lv_obj_set_flex_flow(results_panel, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(results_panel, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-
-    ctx->heater_label = lv_label_create(results_panel);
-    lv_label_set_text(ctx->heater_label, "Tapis chauffant : en attente de calcul.");
-    lv_label_set_long_mode(ctx->heater_label, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(ctx->heater_label, LV_PCT(100));
-
-    ctx->lighting_label = lv_label_create(results_panel);
-    lv_label_set_text(ctx->lighting_label, "Eclairage LED : en attente de calcul.");
-    lv_label_set_long_mode(ctx->lighting_label, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(ctx->lighting_label, LV_PCT(100));
-
-    ctx->uv_label = lv_label_create(results_panel);
-    lv_label_set_text(ctx->uv_label, "Modules UV : en attente de calcul.");
-    lv_label_set_long_mode(ctx->uv_label, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(ctx->uv_label, LV_PCT(100));
-
-    ctx->substrate_label = lv_label_create(results_panel);
-    lv_label_set_text(ctx->substrate_label, "Substrat : en attente de calcul.");
-    lv_label_set_long_mode(ctx->substrate_label, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(ctx->substrate_label, LV_PCT(100));
-
-    ctx->misting_label = lv_label_create(results_panel);
-    lv_label_set_text(ctx->misting_label, "Brumisation : en attente de calcul.");
-    lv_label_set_long_mode(ctx->misting_label, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(ctx->misting_label, LV_PCT(100));
-
-    lv_obj_add_event_cb(button, calculate_event_cb, LV_EVENT_CLICKED, ctx);
+    heating_pad_run_self_test();
+    heating_cable_run_self_test();
+    lighting_run_self_test();
+    substrate_run_self_test();
+    misting_run_self_test();
 }
 
 void app_main(void)
 {
+    ESP_ERROR_CHECK(storage_init());
     esp_err_t err = init_display();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Display init failed: %s", esp_err_to_name(err));
         deinit_display();
-        enter_safe_fault_state("initialisation de l'ecran", err);
+        enter_safe_fault_state("initialisation de l'écran", err);
     }
 
     err = init_lvgl();
@@ -820,23 +525,21 @@ void app_main(void)
     }
 
     configure_task_wdt();
-
-    static terrarium_ui_ctx_t ui_ctx = {0};
-    build_ui(&ui_ctx);
+    ui_main_init();
 
     err = init_touch();
     if (err != ESP_OK) {
-        lv_label_set_text(ui_ctx.status_label, "Tactile indisponible - consultez les logs GT911.");
         ESP_LOGW(TAG, "Touch controller unavailable (%s)", esp_err_to_name(err));
     }
 
     err = start_lvgl_task();
     if (err != ESP_OK) {
-        lv_label_set_text(ui_ctx.status_label, "Erreur critique LVGL (tache non demarree).");
         ESP_LOGE(TAG, "Unable to start LVGL task (%s)", esp_err_to_name(err));
         deinit_lvgl();
         deinit_display();
-        enter_safe_fault_state("demarrage de la tache LVGL", err);
+        enter_safe_fault_state("démarrage de la tache LVGL", err);
     }
+
+    run_self_tests();
 }
 
