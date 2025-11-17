@@ -8,11 +8,11 @@ typedef struct {
 } substrate_density_t;
 
 // Plages issues de fiches techniques :
-// - Terreau horticole : 0,65-0,85 kg/L (riche en matière organique)
-// - Fibre de coco réhydratée : 0,45-0,65 kg/L (bloc 5 kg -> 70-80 L)
-// - Mélange forestier (écorce/pin/humus) : 0,60-0,80 kg/L
-// - Sable fin : 1,5-1,7 kg/L
-// - Sable/terre : 1,0-1,3 kg/L
+// - Terreau horticole : 0,65-0,85 kg/L (NF U44-551) = norme
+// - Fibre de coco réhydratée : 0,45-0,65 kg/L (bloc 5 kg -> 70-80 L) = catalogue
+// - Mélange forestier (écorce/pin/humus) : 0,60-0,80 kg/L = catalogue
+// - Sable fin : 1,5-1,7 kg/L (EN 13139 granulats) = norme
+// - Sable/terre : 1,0-1,3 kg/L (mélange prudent pour drainage)
 static const substrate_density_t density_table[SUBSTRATE_COUNT] = {
     [SUBSTRATE_SOIL] = {.density_min_kg_per_l = 0.65f, .density_max_kg_per_l = 0.85f},
     [SUBSTRATE_COCO] = {.density_min_kg_per_l = 0.45f, .density_max_kg_per_l = 0.65f},
@@ -51,7 +51,7 @@ bool substrate_calculate(const substrate_input_t *in, substrate_result_t *out)
     substrate_result_t r = {0};
     const float volume_l = (in->length_cm * in->depth_cm * in->substrate_height_cm) / 1000.0f;
     const substrate_density_t d = density_table[in->type];
-    const float density_mid = (d.density_min_kg_per_l + d.density_max_kg_per_l) * 0.5f;
+    const float density_mid = (d.density_min_kg_per_l + d.density_max_kg_per_l) * 0.5f; // valeur nominale, ajouter +10 % en terrain tassé (prudent)
     r.valid = volume_l > 0.0f;
     r.volume_l = volume_l;
     r.density_min_kg_per_l = d.density_min_kg_per_l;

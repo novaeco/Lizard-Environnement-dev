@@ -18,14 +18,14 @@ static float density_limit(terrarium_material_t m)
 {
     switch (m) {
     case TERRARIUM_MATERIAL_GLASS:
-        return 0.05f; // fabricants 0,03-0,05 W/cm² max sur verre
+        return 0.05f; // fabricants 0,03-0,05 W/cm² max sur verre (catalogue) + alertes à 90 % (prudent)
         return 0.05f;
     case TERRARIUM_MATERIAL_WOOD:
-        return 0.06f;
+        return 0.06f; // bois mieux tolérant, plafond catalogue Zoo Med/Exo Terra
     case TERRARIUM_MATERIAL_PVC:
-        return 0.04f;
+        return 0.04f; // PVC ramolli >60 °C, abaissement -20 % vs verre (prudent)
     case TERRARIUM_MATERIAL_ACRYLIC:
-        return 0.035f;
+        return 0.035f; // PMMA déformable, limite abaissée (prudent)
     default:
         return 0.05f;
     }
@@ -70,7 +70,7 @@ bool heating_cable_calculate(const heating_cable_input_t *in, heating_cable_resu
     const float length_from_geometry_m = heated_area / (spacing * 100.0f); // découpe serpentin simple
     const float length_m = fmaxf(length_from_power_m, length_from_geometry_m);
     const float resulting_density = (in->power_linear_w_per_m * length_m) / heated_area;
-    const float limit = density_limit(in->material);
+    const float limit = density_limit(in->material); // catalogue + marge 10 % via alerte 90 %
     const float r_per_m = (in->supply_voltage_v > 0.0f) ? ((in->supply_voltage_v * in->supply_voltage_v) / in->power_linear_w_per_m) : 0.0f;
     const float resistance = (r_per_m > 0.0f) ? r_per_m * length_m : 0.0f;
     const float current = (resistance > 0.0f && in->supply_voltage_v > 0.0f) ? in->supply_voltage_v / resistance : 0.0f;

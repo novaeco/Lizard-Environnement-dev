@@ -14,6 +14,8 @@ static float clampf(float v, float min, float max)
     return v;
 }
 
+// Lux cibles issus des guides terrariophiles (Arcadia/Exo Terra) pour l'éclairage général
+// et ajustés sans marge (norme/catalogue) car peu critiques thermiquement
 static float target_lux_for_env(terrarium_environment_t env)
 {
     switch (env) {
@@ -31,6 +33,7 @@ static float target_lux_for_env(terrarium_environment_t env)
     }
 }
 
+// UVI cibles basés sur Ferguson et al. 2010 (norme scientifique) avec alerte ±20 % (prudent)
 static float target_uvi_for_env(terrarium_environment_t env)
 {
     switch (env) {
@@ -47,6 +50,8 @@ static float target_uvi_for_env(terrarium_environment_t env)
     }
 }
 
+// Distances recommandées depuis fiches Arcadia/Exo Terra T5 UVB (catalogue)
+// valeurs centrales, à affiner avec UVI-mètre ; marge de sécurité via alertes 80-120 %
 static float recommended_distance_for_env(terrarium_environment_t env)
 {
     switch (env) {
@@ -75,6 +80,7 @@ static float clampf(float v, float min, float max)
     return v;
 }
 
+// Plages Ferguson (norme) utilisées pour encadrer l'alerte : warning si <80 % ou >120 %
 static void ferguson_range(terrarium_environment_t env, float *min_uvi, float *max_uvi)
 {
     switch (env) {

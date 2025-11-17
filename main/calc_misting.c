@@ -14,6 +14,8 @@ static float clampf(float v, float min, float max)
     return v;
 }
 
+// Couverture issue datasheets MistKing/ExoTerra 0,08-0,16 m² par buse (catalogue)
+// surdimensionnée +20 % en milieux secs (prudent) via seuil densité buses
 static float coverage_for_env(mist_environment_t env)
 {
     switch (env) {
@@ -50,7 +52,7 @@ bool misting_calculate(const misting_input_t *in, misting_result_t *out)
     const float daily_volume_ml = in->nozzle_flow_ml_per_min * in->cycle_duration_min * in->cycles_per_day * r.nozzle_count;
     const float daily_volume_l = daily_volume_ml / 1000.0f;
     r.daily_consumption_l = daily_volume_l;
-    r.tank_volume_l = daily_volume_l * (float)in->autonomy_days * 1.2f; // +20% marge
+    r.tank_volume_l = daily_volume_l * (float)in->autonomy_days * 1.2f; // +20% marge anti-désamorçage (prudent)
     r.tank_volume_autonomy3_l = daily_volume_l * 3.0f * 1.2f;
     r.tank_volume_autonomy7_l = daily_volume_l * 7.0f * 1.2f;
     r.warning_dense_spray = (r.nozzle_count / fmaxf(area_m2, 0.1f)) > 10.0f; // >10 buses/m² : risque saturation
