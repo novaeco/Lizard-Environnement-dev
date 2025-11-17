@@ -53,6 +53,21 @@ esp_err_t storage_init(void)
     return err;
 }
 
+esp_err_t storage_reset_nvs(void)
+{
+    esp_err_t err = nvs_flash_erase();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "NVS erase failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    err = nvs_flash_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "NVS re-init failed after erase: %s", esp_err_to_name(err));
+    }
+    return err;
+}
+
 typedef struct __attribute__((packed)) {
     float length_cm;
     float depth_cm;

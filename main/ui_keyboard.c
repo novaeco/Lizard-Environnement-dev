@@ -12,14 +12,34 @@ typedef struct {
 
 static lv_obj_t *s_keyboard;
 static ui_keyboard_mode_t s_default_mode = UI_KEYBOARD_MODE_TEXT;
+static ui_keyboard_layout_t s_layout = UI_KEYBOARD_LAYOUT_FR_AZERTY;
 
-static const char *const s_text_map[] = {
+static const char *const s_text_map_fr[] = {
     "1",  "2",  "3",  "4",  "5",  "6",  "7",  "8",  "9",  "0",  "Bksp", "\n",
     "a",  "z",  "e",  "r",  "t",  "y",  "u",  "i",  "o",  "p",  "é",   "è",   "\n",
     "q",  "s",  "d",  "f",  "g",  "h",  "j",  "k",  "l",  "m",  "à",   "ù",   "\n",
     "Shift", "w",  "x",  "c",  "v",  "b",  "n",  "ç",  "-",  "'",  "Enter", "\n",
     "123", "Space", ".",  ",",  "?",  "!",  "Hide", "",   "",   "",   "",   ""
 };
+
+static const char *const s_text_map_en[] = {
+    "1",  "2",  "3",  "4",  "5",  "6",  "7",  "8",  "9",  "0",  "Bksp", "\n",
+    "q",  "w",  "e",  "r",  "t",  "y",  "u",  "i",  "o",  "p",  "-",   "'",   "\n",
+    "a",  "s",  "d",  "f",  "g",  "h",  "j",  "k",  "l",  ";",  ",",   ".",   "\n",
+    "Shift", "z",  "x",  "c",  "v",  "b",  "n",  "m",  ",",  ".",  "Enter", "\n",
+    "123", "Space", ".",  ",",  "?",  "!",  "Hide", "",   "",   "",   "",   ""
+};
+
+static const char *const *get_text_map(ui_keyboard_layout_t layout)
+{
+    switch (layout) {
+    case UI_KEYBOARD_LAYOUT_EN_QWERTY:
+        return s_text_map_en;
+    case UI_KEYBOARD_LAYOUT_FR_AZERTY:
+    default:
+        return s_text_map_fr;
+    }
+}
 
 static const char *const s_numeric_map[] = {
     "1",  "2",  "3",  "4",  "5",  "Bksp", "\n",
@@ -36,7 +56,7 @@ static void keyboard_apply_layout(ui_keyboard_mode_t mode)
 
     switch (mode) {
     case UI_KEYBOARD_MODE_TEXT:
-        lv_keyboard_set_map(s_keyboard, LV_KEYBOARD_MODE_USER_1, s_text_map, NULL);
+        lv_keyboard_set_map(s_keyboard, LV_KEYBOARD_MODE_USER_1, get_text_map(s_layout), NULL);
         lv_keyboard_set_mode(s_keyboard, LV_KEYBOARD_MODE_USER_1);
         break;
     case UI_KEYBOARD_MODE_NUMERIC:
@@ -140,6 +160,21 @@ void ui_keyboard_set_default_mode(ui_keyboard_mode_t mode)
 {
     s_default_mode = mode;
     keyboard_apply_layout(mode);
+}
+
+void ui_keyboard_set_layout(ui_keyboard_layout_t layout)
+{
+    if (s_layout == layout) {
+        return;
+    }
+
+    s_layout = layout;
+    keyboard_apply_layout(s_default_mode);
+}
+
+ui_keyboard_layout_t ui_keyboard_get_layout(void)
+{
+    return s_layout;
 }
 
 void ui_keyboard_attach(lv_obj_t *textarea, ui_keyboard_mode_t mode)
