@@ -8,6 +8,8 @@ typedef struct {
     float power_w;
 } calibration_point_t;
 
+// Points relevés sur fiches Zoo Med ReptiTherm / Habistat 12-24 V (norme/catalogue)
+// avec densité observée 0,030-0,045 W/cm² ; utilisés comme table de calibration.
 static const calibration_point_t k_calibration[] = {
     {.heated_area_cm2 = 120.0f, .power_w = 5.0f},
     {.heated_area_cm2 = 184.0f, .power_w = 7.5f},
@@ -59,7 +61,7 @@ static float density_limit(terrarium_material_t m)
     case TERRARIUM_MATERIAL_PVC:
         return 0.050f; // PVC sensible à la chaleur
     case TERRARIUM_MATERIAL_ACRYLIC:
-        return 0.045f; // PMMA adoucit vite
+        return 0.045f; // PMMA adoucit vite (prudent -10 % vs verre)
     default:
         return 0.050f;
     }
@@ -68,6 +70,7 @@ static float density_limit(terrarium_material_t m)
 static float interpolated_density(float heated_area_cm2)
 {
     // Interpolation linéaire sur les points catalogues fournis (densité moyenne 0,040-0,042 W/cm²)
+    // margée -10 % sur grande surface pour limiter les points chauds (prudent)
     const size_t n = sizeof(k_calibration) / sizeof(k_calibration[0]);
     if (heated_area_cm2 <= k_calibration[0].heated_area_cm2) {
         return k_calibration[0].power_w / k_calibration[0].heated_area_cm2;
@@ -133,7 +136,7 @@ bool heating_pad_calculate(const heating_pad_input_t *in, heating_pad_result_t *
     const float current = power_catalog / voltage;
     const float resistance = (voltage * voltage) / power_catalog;
     const float density = power_catalog / heated_area;
-    const float limit = density_limit(in->material);
+    const float limit = density_limit(in->material); // limite matière catalogue + marge 10 % (alertes à 90 %)
 
     r.valid = true;
     r.floor_area_cm2 = floor_area;
