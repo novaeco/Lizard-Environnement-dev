@@ -8,8 +8,8 @@ typedef struct {
     float power_w;
 } calibration_point_t;
 
-// Points relevés sur fiches Zoo Med ReptiTherm / Habistat 12-24 V (norme/catalogue)
-// avec densité observée 0,030-0,045 W/cm² ; utilisés comme table de calibration.
+// Points relevés sur fiches Zoo Med ReptiTherm / Habistat 12-24 V (catalogue)
+// et utilisés comme table de spline monotone (densité 0,030-0,045 W/cm²).
 static const calibration_point_t k_calibration[] = {
     {.heated_area_cm2 = 120.0f, .power_w = 5.0f},
     {.heated_area_cm2 = 184.0f, .power_w = 7.5f},
@@ -17,6 +17,28 @@ static const calibration_point_t k_calibration[] = {
     {.heated_area_cm2 = 865.0f, .power_w = 35.0f},
     {.heated_area_cm2 = 1947.0f, .power_w = 78.0f},
 };
+
+typedef struct {
+    float min_density_w_cm2;
+    float max_density_w_cm2;
+    float material_coeff;
+} material_limits_t;
+
+static material_limits_t limits_for_material(terrarium_material_t m)
+{
+    switch (m) {
+    case TERRARIUM_MATERIAL_WOOD:
+        return (material_limits_t){.min_density_w_cm2 = 0.032f, .max_density_w_cm2 = 0.065f, .material_coeff = 0.90f};
+    case TERRARIUM_MATERIAL_GLASS:
+        return (material_limits_t){.min_density_w_cm2 = 0.030f, .max_density_w_cm2 = 0.055f, .material_coeff = 1.00f};
+    case TERRARIUM_MATERIAL_PVC:
+        return (material_limits_t){.min_density_w_cm2 = 0.028f, .max_density_w_cm2 = 0.050f, .material_coeff = 0.93f};
+    case TERRARIUM_MATERIAL_ACRYLIC:
+        return (material_limits_t){.min_density_w_cm2 = 0.027f, .max_density_w_cm2 = 0.045f, .material_coeff = 0.96f};
+    default:
+        return (material_limits_t){.min_density_w_cm2 = 0.030f, .max_density_w_cm2 = 0.055f, .material_coeff = 1.0f};
+    }
+}
 
 static float clampf(float v, float min, float max)
 {
@@ -29,64 +51,68 @@ static float clampf(float v, float min, float max)
     return v;
 }
 
-static float material_coeff(terrarium_material_t m)
+// Spline Hermite monotone (Fritsch-Carlson) sur les 5 points catalogue
+static float spline_power_for_area(float area_cm2)
 {
-    switch (m) {
-    case TERRARIUM_MATERIAL_WOOD:
-        return 0.88f; // bois isolé, pertes moindres
-        return 0.88f; // bois isolé
-    case TERRARIUM_MATERIAL_GLASS:
-        return 1.00f; // référence
-    case TERRARIUM_MATERIAL_PVC:
-        return 0.93f;
-    case TERRARIUM_MATERIAL_ACRYLIC:
-        return 0.96f;
-    default:
-        return 1.0f;
-    }
-}
-
-static float density_limit(terrarium_material_t m)
-{
-    switch (m) {
-    case TERRARIUM_MATERIAL_GLASS:
-        return 0.055f; // fiches tapis 0,035-0,055 W/cm² sur verre
-    case TERRARIUM_MATERIAL_WOOD:
-        return 0.065f; // bois supporte mieux, mais surveiller l'isolation
-    case TERRARIUM_MATERIAL_PVC:
-        return 0.050f; // PVC sensible à la chaleur (déformation)
-        return 0.055f; // prudence sur verre
-    case TERRARIUM_MATERIAL_WOOD:
-        return 0.065f; // bois supporte mieux
-    case TERRARIUM_MATERIAL_PVC:
-        return 0.050f; // PVC sensible à la chaleur
-    case TERRARIUM_MATERIAL_ACRYLIC:
-        return 0.045f; // PMMA adoucit vite (prudent -10 % vs verre)
-    default:
-        return 0.050f;
-    }
-}
-
-static float interpolated_density(float heated_area_cm2)
-{
-    // Interpolation linéaire sur les points catalogues fournis (densité moyenne 0,040-0,042 W/cm²)
-    // margée -10 % sur grande surface pour limiter les points chauds (prudent)
     const size_t n = sizeof(k_calibration) / sizeof(k_calibration[0]);
-    if (heated_area_cm2 <= k_calibration[0].heated_area_cm2) {
-        return k_calibration[0].power_w / k_calibration[0].heated_area_cm2;
+    float x[n];
+    float y[n];
+    for (size_t i = 0; i < n; ++i) {
+        x[i] = k_calibration[i].heated_area_cm2;
+        y[i] = k_calibration[i].power_w;
     }
-    for (size_t i = 1; i < n; ++i) {
-        const calibration_point_t *a = &k_calibration[i - 1];
-        const calibration_point_t *b = &k_calibration[i];
-        if (heated_area_cm2 <= b->heated_area_cm2) {
-            float t = (heated_area_cm2 - a->heated_area_cm2) / (b->heated_area_cm2 - a->heated_area_cm2);
-            float power = a->power_w + t * (b->power_w - a->power_w);
-            return power / heated_area_cm2;
+
+    float m[n - 1];
+    for (size_t i = 0; i < n - 1; ++i) {
+        m[i] = (y[i + 1] - y[i]) / (x[i + 1] - x[i]);
+    }
+
+    float t[n];
+    t[0] = m[0];
+    for (size_t i = 1; i < n - 1; ++i) {
+        t[i] = 0.5f * (m[i - 1] + m[i]);
+    }
+    t[n - 1] = m[n - 2];
+
+    for (size_t i = 0; i < n - 1; ++i) {
+        if (fabsf(m[i]) < 1e-6f) {
+            t[i] = 0.0f;
+            t[i + 1] = 0.0f;
+        } else {
+            const float a = t[i] / m[i];
+            const float b = t[i + 1] / m[i];
+            const float s = a * a + b * b;
+            if (s > 9.0f) {
+                const float tau = 3.0f / sqrtf(s);
+                t[i] = tau * a * m[i];
+                t[i + 1] = tau * b * m[i];
+            }
         }
     }
-    // extrapolation douce au-delà du dernier point avec légère réduction pour limiter les surchauffes sur grandes surfaces
-    float last_density = k_calibration[n - 1].power_w / k_calibration[n - 1].heated_area_cm2;
-    return last_density * clampf(1947.0f / heated_area_cm2, 0.85f, 1.0f);
+
+    if (area_cm2 <= x[0]) {
+        return y[0] + t[0] * (area_cm2 - x[0]);
+    }
+    if (area_cm2 >= x[n - 1]) {
+        return y[n - 1] + t[n - 1] * (area_cm2 - x[n - 1]);
+    }
+
+    size_t idx = 0;
+    for (size_t i = 0; i < n - 1; ++i) {
+        if (area_cm2 <= x[i + 1]) {
+            idx = i;
+            break;
+        }
+    }
+
+    const float h = x[idx + 1] - x[idx];
+    const float s = (area_cm2 - x[idx]) / h;
+    const float h00 = (2.0f * s * s * s) - (3.0f * s * s) + 1.0f;
+    const float h10 = (s * s * s) - (2.0f * s * s) + s;
+    const float h01 = (-2.0f * s * s * s) + (3.0f * s * s);
+    const float h11 = (s * s * s) - (s * s);
+
+    return (h00 * y[idx]) + (h10 * h * t[idx]) + (h01 * y[idx + 1]) + (h11 * h * t[idx + 1]);
 }
 
 static float round_catalog_power(float p)
@@ -107,7 +133,6 @@ bool heating_pad_calculate(const heating_pad_input_t *in, heating_pad_result_t *
         return false;
     }
     if (in->length_cm < 5.0f || in->depth_cm < 5.0f || in->height_cm <= 0.0f) {
-    if (in->length_cm <= 0.0f || in->depth_cm <= 0.0f || in->height_cm <= 0.0f) {
         return false;
     }
 
@@ -117,43 +142,36 @@ bool heating_pad_calculate(const heating_pad_input_t *in, heating_pad_result_t *
     const float floor_area = in->length_cm * in->depth_cm;
     const float heated_area = floor_area * ratio;
     const float heater_side = sqrtf(heated_area);
-    const float coeff = material_coeff(in->material);
 
-    // densité issue du tableau + correction hauteur (terrariums hauts = pertes verticales)
-    const float density_catalog = interpolated_density(heated_area);
-    const float height_factor = clampf(in->height_cm / 50.0f, 0.8f, 1.35f);
-    const float power_raw = heated_area * density_catalog * coeff * height_factor;
-    /*
-     * Modèle issu du tableau fourni (~0,040 W/cm² en moyenne sur 1/3 de surface),
-     * ajusté par le coefficient de matériau et par le volume (hauteur) pour éviter
-     * la sous-estimation des terrariums hauts.
-     */
-    const float base_density = 0.040f;
-    const float height_factor = clampf(in->height_cm / 50.0f, 0.7f, 1.35f);
-    const float power_raw = heated_area * base_density * coeff * height_factor;
-    const float power_catalog = round_catalog_power(power_raw);
-    const float voltage = (power_catalog <= 18.0f) ? 12.0f : 24.0f;
-    const float current = power_catalog / voltage;
-    const float resistance = (voltage * voltage) / power_catalog;
-    const float density = power_catalog / heated_area;
-    const float limit = density_limit(in->material); // limite matière catalogue + marge 10 % (alertes à 90 %)
+    const material_limits_t limits = limits_for_material(in->material);
+    const float power_catalog = spline_power_for_area(heated_area);
+    const float density_catalog = clampf(power_catalog / heated_area, limits.min_density_w_cm2, limits.max_density_w_cm2);
+
+    const float height_factor = clampf(in->height_cm / 50.0f, 0.85f, 1.35f);
+    const float density_raw = density_catalog * limits.material_coeff * height_factor;
+    const float density_capped = clampf(density_raw, limits.min_density_w_cm2, limits.max_density_w_cm2);
+
+    const float power_raw = heated_area * density_capped;
+    const float power_final = round_catalog_power(power_raw);
+    const float voltage = (power_final <= 18.0f) ? 12.0f : 24.0f;
+    const float current = power_final / voltage;
+    const float resistance = (voltage * voltage) / power_final;
+    const float density_final = power_final / heated_area;
 
     r.valid = true;
     r.floor_area_cm2 = floor_area;
     r.heated_area_cm2 = heated_area;
     r.heater_side_cm = roundf(heater_side * 2.0f) / 2.0f;
-    r.power_w = power_catalog;
-    r.power_density_w_per_cm2 = density;
-    r.density_limit_w_per_cm2 = limit;
+    r.power_w = power_final;
+    r.power_density_w_per_cm2 = density_final;
+    r.density_limit_w_per_cm2 = limits.max_density_w_cm2;
     r.voltage_v = voltage;
     r.current_a = current;
     r.resistance_ohm = resistance;
-    r.warning_density_high = density > limit * 0.9f;
-    r.warning_density_over = density > limit;
-    r.voltage_v = voltage;
-    r.current_a = current;
-    r.resistance_ohm = resistance;
-    r.warning_density_high = density > density_limit(in->material) * 0.9f;
+    r.warning_density_high = density_final > limits.max_density_w_cm2 * 0.9f;
+    r.warning_density_over = density_final > limits.max_density_w_cm2;
+    r.warning_density_near_limit = (density_final > limits.max_density_w_cm2 * 0.95f) ||
+                                   (density_final < limits.min_density_w_cm2 * 1.05f);
 
     *out = r;
     return true;
@@ -182,4 +200,3 @@ void heating_pad_run_self_test(void)
     log_case(60, 45, 45, 0.33f, TERRARIUM_MATERIAL_GLASS);
     log_case(100, 60, 60, 0.33f, TERRARIUM_MATERIAL_GLASS);
 }
-

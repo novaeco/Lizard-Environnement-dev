@@ -15,13 +15,11 @@ static float clampf(float v, float min, float max)
 }
 
 // Lux cibles issus des guides terrariophiles (Arcadia/Exo Terra) pour l'éclairage général
-// et ajustés sans marge (norme/catalogue) car peu critiques thermiquement
 static float target_lux_for_env(terrarium_environment_t env)
 {
     switch (env) {
     case TERRARIUM_ENV_TROPICAL:
         return 12000.0f; // jungle claire (10-15 klux)
-        return 12000.0f; // jungle claire
     case TERRARIUM_ENV_DESERTIC:
         return 20000.0f; // zone ensoleillée pour Pogona
     case TERRARIUM_ENV_TEMPERATE_FOREST:
@@ -33,30 +31,34 @@ static float target_lux_for_env(terrarium_environment_t env)
     }
 }
 
-// UVI cibles basés sur Ferguson et al. 2010 (norme scientifique) avec alerte ±20 % (prudent)
-static float target_uvi_for_env(terrarium_environment_t env)
+// Plages Ferguson (norme) utilisées pour recaler l'objectif UVI
+static void ferguson_range(terrarium_environment_t env, float *min_uvi, float *max_uvi)
 {
     switch (env) {
-    case TERRARIUM_ENV_TROPICAL:
-        return 2.0f; // zone Ferguson 2-3
     case TERRARIUM_ENV_DESERTIC:
-        return 4.0f; // zone Ferguson 3-4
+        *min_uvi = 3.0f;
+        *max_uvi = 6.0f;
+        break;
+    case TERRARIUM_ENV_TROPICAL:
+        *min_uvi = 1.0f;
+        *max_uvi = 3.0f;
+        break;
     case TERRARIUM_ENV_TEMPERATE_FOREST:
-        return 1.5f;
+        *min_uvi = 0.7f;
+        *max_uvi = 2.0f;
+        break;
     case TERRARIUM_ENV_NOCTURNAL:
-        return 0.5f;
     default:
-        return 1.5f;
+        *min_uvi = 0.0f;
+        *max_uvi = 1.0f;
+        break;
     }
 }
 
-// Distances recommandées depuis fiches Arcadia/Exo Terra T5 UVB (catalogue)
-// valeurs centrales, à affiner avec UVI-mètre ; marge de sécurité via alertes 80-120 %
 static float recommended_distance_for_env(terrarium_environment_t env)
 {
     switch (env) {
     case TERRARIUM_ENV_DESERTIC:
-        return 30.0f; // reptile solaire type Pogona
         return 30.0f;
     case TERRARIUM_ENV_TROPICAL:
         return 25.0f;
@@ -69,39 +71,13 @@ static float recommended_distance_for_env(terrarium_environment_t env)
     }
 }
 
-static float clampf(float v, float min, float max)
+static float project_irradiance(float value_at_ref, float ref_cm, float target_cm)
 {
-    if (v < min) {
-        return min;
-    }
-    if (v > max) {
-        return max;
-    }
-    return v;
-}
-
-// Plages Ferguson (norme) utilisées pour encadrer l'alerte : warning si <80 % ou >120 %
-static void ferguson_range(terrarium_environment_t env, float *min_uvi, float *max_uvi)
-{
-    switch (env) {
-    case TERRARIUM_ENV_DESERTIC:
-        *min_uvi = 3.0f;
-        *max_uvi = 6.0f;
-        break; // zone 3-4
-    case TERRARIUM_ENV_TROPICAL:
-        *min_uvi = 1.0f;
-        *max_uvi = 3.0f;
-        break; // zone 2-3
-    case TERRARIUM_ENV_TEMPERATE_FOREST:
-        *min_uvi = 0.7f;
-        *max_uvi = 2.0f;
-        break; // zone 2
-    case TERRARIUM_ENV_NOCTURNAL:
-    default:
-        *min_uvi = 0.0f;
-        *max_uvi = 1.0f;
-        break; // zone 1
-    }
+    // loi en 1/r^p légèrement adoucie (p=1.9) pour refléter les réflecteurs UV
+    const float exponent = 1.9f;
+    const float ref = fmaxf(ref_cm, 1.0f);
+    const float tgt = fmaxf(target_cm, 1.0f);
+    return value_at_ref * powf(ref / tgt, exponent);
 }
 
 bool lighting_calculate(const lighting_input_t *in, lighting_result_t *out)
@@ -133,14 +109,14 @@ bool lighting_calculate(const lighting_input_t *in, lighting_result_t *out)
     float uvi_min = 0.0f, uvi_max = 0.0f;
     ferguson_range(in->environment, &uvi_min, &uvi_max);
     const float target_mid = (uvi_min + uvi_max) * 0.5f;
-    const float target_distance = clampf(in->height_cm > 0.0f ? in->height_cm * 0.7f : r.led.recommended_distance_cm,
-                                         10.0f,
-                                         60.0f);
+
+    const float base_distance = recommended_distance_for_env(in->environment);
+    const float target_distance = clampf(in->height_cm > 0.0f ? in->height_cm * 0.7f : base_distance, 10.0f, 80.0f);
 
     const float uvb_per_module = in->uvb_uvi_at_distance;
     if (uvb_per_module > 0.0f) {
-        const float projected = uvb_per_module * powf(ref_dist / target_distance, 2.0f);
-        const float uvb_units = target_mid / fmaxf(projected, 0.1f);
+        const float projected = project_irradiance(uvb_per_module, ref_dist, target_distance);
+        const float uvb_units = target_mid / fmaxf(projected, 0.05f);
         r.uvb.module_count = (uint32_t)ceilf(uvb_units - 1e-3f);
         r.uvb.target_uvi_min = uvi_min;
         r.uvb.target_uvi_max = uvi_max;
@@ -153,9 +129,9 @@ bool lighting_calculate(const lighting_input_t *in, lighting_result_t *out)
     }
 
     if (in->uva_irradiance_mw_cm2_at_distance > 0.0f) {
-        const float target_uva = clampf(target_mid * 15.0f, 2.0f, 20.0f);
-        const float projected = in->uva_irradiance_mw_cm2_at_distance * powf(ref_dist / target_distance, 2.0f);
-        const float uva_units = target_uva / fmaxf(projected, 0.1f);
+        const float target_uva = clampf(target_mid * 15.0f, 1.5f, 25.0f);
+        const float projected = project_irradiance(in->uva_irradiance_mw_cm2_at_distance, ref_dist, target_distance);
+        const float uva_units = target_uva / fmaxf(projected, 0.05f);
         r.uva.module_count = (uint32_t)ceilf(uva_units - 1e-3f);
         r.uva.target_uvi_min = target_uva;
         r.uva.target_uvi_max = target_uva;
@@ -163,31 +139,11 @@ bool lighting_calculate(const lighting_input_t *in, lighting_result_t *out)
         r.uva.recommended_distance_cm = target_distance;
         r.uva.estimated_uvi_at_distance = projected;
         r.uva.estimated_total_uvi = projected * r.uva.module_count;
-        r.uva.warning_high = projected > target_uva * 1.6f;
-        r.uva.warning_low = projected < target_uva * 0.5f;
-
-    const float ref_dist = (in->reference_distance_cm > 0.0f) ? in->reference_distance_cm : 30.0f;
-    const float target_uvi = target_uvi_for_env(in->environment);
-    const float uvb_per_module = in->uvb_uvi_at_distance;
-    if (uvb_per_module > 0.0f) {
-        const float uvb_units = target_uvi / uvb_per_module;
-        r.uvb.module_count = (uint32_t)ceilf(uvb_units - 1e-3f);
-        r.uvb.target_uvi = target_uvi;
-        r.uvb.valid = r.uvb.module_count > 0;
-        r.uvb.recommended_distance_cm = ref_dist;
-        r.uvb.warning_high = uvb_per_module * r.uvb.module_count > target_uvi * 1.5f;
+        r.uva.warning_high = r.uva.estimated_total_uvi > target_uva * 1.2f;
+        r.uva.warning_low = r.uva.estimated_total_uvi < target_uva * 0.8f;
     }
 
-    if (in->uva_irradiance_mw_cm2_at_distance > 0.0f) {
-        const float target_uva = clampf(target_uvi * 15.0f, 2.0f, 20.0f);
-        const float uva_units = target_uva / in->uva_irradiance_mw_cm2_at_distance;
-        r.uva.module_count = (uint32_t)ceilf(uva_units - 1e-3f);
-        r.uva.target_uvi = target_uva;
-        r.uva.valid = r.uva.module_count > 0;
-        r.uva.recommended_distance_cm = ref_dist;
-        r.uva.warning_high = in->uva_irradiance_mw_cm2_at_distance * r.uva.module_count > target_uva * 1.6f;
-    }
-
+    r.valid = r.led.valid || r.uvb.valid || r.uva.valid;
     *out = r;
     return true;
 }
@@ -214,11 +170,6 @@ void lighting_run_self_test(void)
                out.uvb.module_count,
                out.uvb.target_uvi_min,
                out.uvb.target_uvi_max,
-        printf("[TEST éclairage] LED=%u (%.0f lm), UVB=%u, UVA=%u\n",
-               out.led.led_count,
-               out.led.total_flux_lm,
-               out.uvb.module_count,
                out.uva.module_count);
     }
 }
-

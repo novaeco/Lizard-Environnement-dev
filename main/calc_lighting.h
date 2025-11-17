@@ -38,10 +38,6 @@ typedef struct {
     float estimated_total_uvi;
     bool warning_high;
     bool warning_low;
-    float target_uvi;
-    uint32_t module_count;
-    float recommended_distance_cm;
-    bool warning_high;
 } lighting_uv_result_t;
 
 typedef struct {

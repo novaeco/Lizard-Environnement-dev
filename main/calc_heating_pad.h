@@ -27,6 +27,7 @@ typedef struct {
     float resistance_ohm;
     bool warning_density_high;
     bool warning_density_over;
+    bool warning_density_near_limit;
 } heating_pad_result_t;
 
 bool heating_pad_calculate(const heating_pad_input_t *in, heating_pad_result_t *out);
