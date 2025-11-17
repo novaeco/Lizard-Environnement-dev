@@ -166,9 +166,25 @@ bool heating_cable_calculate(const heating_cable_input_t *in, heating_cable_resu
     return true;
 }
 
+static void log_case(const heating_cable_input_t *in)
+{
+    heating_cable_result_t out = {0};
+    if (heating_cable_calculate(in, &out)) {
+        printf("[TEST câble] %.0fx%.0f (ratio %.2f) -> %.2f m, %.1f cm esp., %.3f W/cm²%s%s\n",
+               in->length_cm,
+               in->depth_cm,
+               in->heated_ratio,
+               out.recommended_length_m,
+               out.spacing_cm,
+               out.resulting_density_w_per_cm2,
+               out.warning_density_over ? " DENSITÉ>max" : (out.warning_density_high ? " densité haute" : ""),
+               out.warning_spacing_too_tight ? " espacement<3cm" : "");
+    }
+}
+
 void heating_cable_run_self_test(void)
 {
-    heating_cable_input_t in = {
+    const heating_cable_input_t nominal = {
         .length_cm = 120,
         .depth_cm = 60,
         .material = TERRARIUM_MATERIAL_GLASS,
@@ -178,13 +194,28 @@ void heating_cable_run_self_test(void)
         .target_power_density_w_per_cm2 = 0.035f,
         .spacing_cm = 4.0f,
     };
-    heating_cable_result_t out = {0};
-    if (heating_cable_calculate(&in, &out)) {
-        printf("[TEST câble] surface %.0f cm² -> %.2f m (%.1f cm d'espacement), %.3f W/cm²%s\n",
-               out.heated_area_cm2,
-               out.recommended_length_m,
-               out.spacing_cm,
-               out.resulting_density_w_per_cm2,
-               out.warning_density_high ? " ALERTE densité" : "");
-    }
+    const heating_cable_input_t minimal = {
+        .length_cm = 10,
+        .depth_cm = 10,
+        .material = TERRARIUM_MATERIAL_PVC,
+        .heated_ratio = 0.25f,
+        .power_linear_w_per_m = 15.0f,
+        .supply_voltage_v = 12.0f,
+        .target_power_density_w_per_cm2 = 0.030f,
+        .spacing_cm = 12.0f,
+    };
+    const heating_cable_input_t dense = {
+        .length_cm = 30,
+        .depth_cm = 20,
+        .material = TERRARIUM_MATERIAL_WOOD,
+        .heated_ratio = 0.60f,
+        .power_linear_w_per_m = 50.0f,
+        .supply_voltage_v = 230.0f,
+        .target_power_density_w_per_cm2 = 0.080f, // dépassement volontaire pour tester clamp + avertissements
+        .spacing_cm = 2.0f,
+    };
+
+    log_case(&nominal);
+    log_case(&minimal);
+    log_case(&dense);
 }
